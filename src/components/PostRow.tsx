@@ -3,15 +3,13 @@ import { listLogs, updatePost } from '../lib/api'
 import { friendlyError } from '../lib/errors'
 import {
   PLATFORM_ICON,
-  POST_STATUS_CLASS,
-  POST_STATUS_ICON,
-  POST_STATUS_LABEL,
   isEditable,
   type PostWithAccount,
   type PublishLog,
 } from '../lib/types'
 import { formatDateTime, fromLocalInput, relative, toLocalInput } from '../lib/format'
-import { Alert, Chip, Loading, Modal } from './ui'
+import { Alert, Loading, Modal } from './ui'
+import { BadgeStatut, LigneAttente } from './Attente'
 
 export function PostRow({
   post,
@@ -36,9 +34,7 @@ export function PostRow({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <Chip className={POST_STATUS_CLASS[post.status]}>
-              {POST_STATUS_ICON[post.status]} {POST_STATUS_LABEL[post.status] ?? post.status}
-            </Chip>
+            <BadgeStatut status={post.status} scheduledAt={post.scheduled_at} />
             <span className="text-sm font-semibold">
               <span className="mr-1.5 opacity-70">
                 {account ? PLATFORM_ICON[account.platform] : '?'}
@@ -76,9 +72,15 @@ export function PostRow({
           <p className="mt-2 text-xs text-mist-500">
             {post.status === 'published' && post.published_at
               ? `Publie ${relative(post.published_at)}, le ${formatDateTime(post.published_at)}`
-              : `Prevu le ${formatDateTime(post.scheduled_at)}, ${relative(post.scheduled_at)}`}
+              : `Prevu le ${formatDateTime(post.scheduled_at)}`}
             {post.attempts > 0 && ` · ${post.attempts} tentative${post.attempts > 1 ? 's' : ''}`}
           </p>
+
+          <LigneAttente
+            status={post.status}
+            scheduledAt={post.scheduled_at}
+            className="mt-1.5"
+          />
 
           {post.error_message && (
             <p className="mt-2 rounded-lg border border-bad-600/40 bg-bad-600/10 px-2.5 py-1.5 text-xs text-bad-400">

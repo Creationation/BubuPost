@@ -121,3 +121,66 @@ body {
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* ---------------------------------------------------------------------------
+   Attente active
+   Signaler que le systeme travaille, sans clignotement agressif : une
+   respiration lente, et un anneau fin plutot qu'un gros bandeau.
+   --------------------------------------------------------------------------- */
+
+@keyframes respire {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+
+@keyframes onde {
+  0%   { transform: scale(1);   opacity: 0.55; }
+  70%  { transform: scale(2.4); opacity: 0; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+@keyframes tourne {
+  to { transform: rotate(360deg); }
+}
+
+@layer components {
+  .respire {
+    animation: respire 2.4s ease-in-out infinite;
+  }
+
+  /* Point lumineux avec son onde, pour un post sur le point de partir. */
+  .balise {
+    position: relative;
+    display: inline-flex;
+    height: 0.45rem;
+    width: 0.45rem;
+    flex-shrink: 0;
+    border-radius: 999px;
+    background: currentColor;
+  }
+  .balise::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: currentColor;
+    animation: onde 2.2s cubic-bezier(0.3, 0, 0.2, 1) infinite;
+  }
+
+  /* Anneau fin, pour l'envoi reellement en cours. */
+  .anneau {
+    display: inline-block;
+    height: 0.7rem;
+    width: 0.7rem;
+    flex-shrink: 0;
+    border-radius: 999px;
+    border: 1.5px solid color-mix(in oklab, currentColor 25%, transparent);
+    border-top-color: currentColor;
+    animation: tourne 0.9s linear infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Sans mouvement, l'onde resterait figee en gros disque opaque. */
+  .balise::after { display: none; }
+}

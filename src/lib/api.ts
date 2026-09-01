@@ -83,6 +83,21 @@ export async function createPostGroup(
   return inserted.length
 }
 
+/**
+ * Etat courant de quelques publications, sans recharger toute la liste.
+ * Sert au rafraichissement automatique pendant qu'une publication est sur le
+ * point de partir : on ne demande que les colonnes qui bougent.
+ */
+export async function refreshPostStatuses(ids: string[]) {
+  if (ids.length === 0) return []
+  return unwrap(
+    await supabase
+      .from('posts')
+      .select('id, status, published_at, error_message, attempts, platform_post_id, container_id')
+      .in('id', ids),
+  )
+}
+
 export async function updatePost(
   id: string,
   patch: { caption?: string | null; hashtags?: string[] | null; scheduled_at?: string; video_url?: string },

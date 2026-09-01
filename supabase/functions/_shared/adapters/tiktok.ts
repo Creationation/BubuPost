@@ -152,6 +152,28 @@ function traduireRefus(message: string, detail: unknown): string | null {
   return null
 }
 
+/**
+ * Motifs de rejet apres analyse de la video par TikTok.
+ * Ils arrivent en anglais et sans contexte, alors que ce sont les erreurs que
+ * Diego rencontrera le plus souvent.
+ */
+function traduireRejet(motif: string): string {
+  const messages: Record<string, string> = {
+    file_format_check_failed:
+      "TikTok n'a pas reconnu le format du fichier. Il attend un MP4 ou un MOV avec une video et un son valides. Reexporte la video et reessaie.",
+    duration_check_failed:
+      'La duree de la video sort des limites acceptees par TikTok pour ce compte.',
+    frame_rate_check_failed:
+      "Le nombre d'images par seconde n'est pas accepte. Reexporte entre 23 et 60 images par seconde.",
+    picture_size_check_failed:
+      "Les dimensions de la video ne conviennent pas. Vise du 1080 sur 1920, en format vertical.",
+    video_pull_failed: "TikTok n'a pas reussi a recuperer la video envoyee. Reessaie.",
+    publish_cancelled: 'La publication a ete annulee cote TikTok.',
+    internal: "Panne interne chez TikTok. Ce n'est pas ta video, reessaie plus tard.",
+  }
+  return messages[motif] ?? `TikTok a rejete la video : ${motif || 'raison inconnue'}`
+}
+
 export const tiktok: PlatformAdapter = {
   label: 'TikTok',
 
@@ -160,14 +182,29 @@ export const tiktok: PlatformAdapter = {
     const taille = await tailleVideo(videoUrl)
     const { tailleMorceau, nombre } = decouper(taille)
 
-    // Choisir un niveau de confidentialite que TikTok accepte reellement pour
-    // ce compte, plutot que d'imposer PUBLIC_TO_EVERYONE et de se faire
-    // refuser sans comprendre. Devient public tout seul une fois l'app review
-    // passee, sans avoir a retoucher le code.
+    // Confidentialite : SELF_ONLY tant que l'application n'est pas auditee.
+    //
+    // C'est une exigence de l'API elle-meme, pas un reglage du compte : une
+    // application non auditee ne peut publier qu'en visible par le proprietaire
+    // seul. Demander PUBLIC_TO_EVERYONE avant l'audit fait echouer la
+    // publication, meme si le compte propose l'option.
+    //
+    // A REVOIR APRES L'APP REVIEW : mettre TIKTOK_AUDITED=1 en secret Supabase.
+    // La publication passera alors au niveau le plus ouvert que TikTok declare
+    // pour ce compte, sans toucher au code. On interroge creator_info avant
+    // chaque publication car ces options varient d'un compte a l'autre et dans
+    // le temps.
     const niveaux = await niveauxAutorises(token)
-    const confidentialite = niveaux.includes('PUBLIC_TO_EVERYONE')
-      ? 'PUBLIC_TO_EVERYONE'
-      : (niveaux[0] ?? 'SELF_ONLY')
+    const auditee = Deno.env.get('TIKTOK_AUDITED') === '1'
+
+    let confidentialite = 'SELF_ONLY'
+    if (auditee && niveaux.includes('PUBLIC_TO_EVERYONE')) {
+      confidentialite = 'PUBLIC_TO_EVERYONE'
+    } else if (!niveaux.includes('SELF_ONLY') && niveaux.length > 0) {
+      // Ce compte ne propose pas SELF_ONLY : on prend ce qu'il offre plutot que
+      // d'envoyer une valeur que TikTok rejettera.
+      confidentialite = niveaux[0]
+    }
 
     // 1. Ouvrir la session : TikTok renvoie un publish_id et une URL d'envoi.
     let init: Record<string, unknown>
@@ -275,10 +312,7 @@ export const tiktok: PlatformAdapter = {
       case 'SEND_TO_USER_INBOX':
         return 'ready'
       case 'FAILED':
-        throw new PlatformError(
-          `TikTok a rejete la video : ${data.fail_reason ?? 'raison inconnue'}`,
-          { detail: json },
-        )
+        throw new PlatformError(traduireRejet(String(data.fail_reason ?? '')), { detail: json })
       default:
         return 'processing'
     }

@@ -3,6 +3,7 @@ import { cancelPost, deletePost, listAccounts, listPosts, retryPost } from '../l
 import { friendlyError } from '../lib/errors'
 import { PLATFORMS, POST_STATUS_LABEL, type Account, type PostWithAccount } from '../lib/types'
 import { formatDay, dayKey } from '../lib/format'
+import { useLiveStatuses } from '../lib/useLiveStatuses'
 import { Alert, ConfirmModal, EmptyState, Loading, PageHeader } from '../components/ui'
 import PostComposer from '../components/PostComposer'
 import { PostEditor, PostLogs, PostRow } from '../components/PostRow'
@@ -43,6 +44,17 @@ export default function Posts() {
   useEffect(() => {
     void reload()
   }, [reload])
+
+  // Les publications imminentes se mettent a jour toutes seules, sans que
+  // Diego ait a recharger la page pour voir si c'est parti.
+  useLiveStatuses(posts, (maj) => {
+    setPosts((actuels) =>
+      actuels.map((p) => {
+        const ligne = maj.find((m) => m.id === p.id)
+        return ligne ? { ...p, ...ligne } : p
+      }),
+    )
+  })
 
   async function act(fn: () => Promise<void>, message: string) {
     try {

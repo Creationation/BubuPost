@@ -4,15 +4,14 @@ import { listAccounts, listPosts } from '../lib/api'
 import { friendlyError } from '../lib/errors'
 import {
   PLATFORM_ICON,
-  POST_STATUS_CLASS,
-  POST_STATUS_ICON,
-  POST_STATUS_LABEL,
   daysUntilExpiry,
   type Account,
   type PostWithAccount,
 } from '../lib/types'
-import { formatDateTime, formatDay, dayKey, relative } from '../lib/format'
-import { Alert, Chip, EmptyState, Loading, PageHeader } from '../components/ui'
+import { formatDateTime, formatDay, dayKey } from '../lib/format'
+import { Alert, EmptyState, Loading, PageHeader } from '../components/ui'
+import { BadgeStatut, LigneAttente, ProchainePublication } from '../components/Attente'
+import { useLiveStatuses } from '../lib/useLiveStatuses'
 
 function Stat({
   label,
@@ -46,6 +45,15 @@ export default function Dashboard() {
       .catch((err) => setError(friendlyError(err)))
       .finally(() => setLoading(false))
   }, [])
+
+  useLiveStatuses(posts, (maj) => {
+    setPosts((actuels) =>
+      actuels.map((p) => {
+        const ligne = maj.find((m) => m.id === p.id)
+        return ligne ? { ...p, ...ligne } : p
+      }),
+    )
+  })
 
   const stats = useMemo(() => {
     const now = Date.now()
@@ -119,6 +127,8 @@ export default function Dashboard() {
           <Alert kind="error">{error}</Alert>
         </div>
       )}
+
+      <ProchainePublication posts={posts} />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat
@@ -212,9 +222,7 @@ export default function Dashboard() {
                 <div className="space-y-2">
                   {list.map((post) => (
                     <div key={post.id} className="panel flex flex-wrap items-center gap-3 p-3">
-                      <Chip className={POST_STATUS_CLASS[post.status]}>
-                        {POST_STATUS_ICON[post.status]} {POST_STATUS_LABEL[post.status]}
-                      </Chip>
+                      <BadgeStatut status={post.status} scheduledAt={post.scheduled_at} />
                       <span className="text-sm font-medium">
                         <span className="mr-1.5 opacity-70">
                           {post.accounts ? PLATFORM_ICON[post.accounts.platform] : '?'}
@@ -224,7 +232,7 @@ export default function Dashboard() {
                       <span className="min-w-0 flex-1 truncate text-xs text-mist-500">
                         {post.caption || 'aucune legende'}
                       </span>
-                      <span className="text-xs text-mist-600">{relative(post.scheduled_at)}</span>
+                      <LigneAttente status={post.status} scheduledAt={post.scheduled_at} />
                     </div>
                   ))}
                 </div>
