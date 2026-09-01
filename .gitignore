@@ -9,3 +9,6 @@ dist-ssr
 .vercel
 supabase/.temp
 *.log
+
+# L'icone est regeneree par scripts/make-icon.cjs
+desktop/BubuPost.png
