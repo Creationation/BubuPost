@@ -13,6 +13,7 @@ import {
   prolongerJeton,
   type PageInstagram,
 } from '../_shared/meta-oauth.ts'
+import { diagnostiquer } from '../_shared/meta-diagnostic.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -169,11 +170,36 @@ Deno.serve(async (req) => {
   } catch (err) {
     const e = err instanceof MetaError ? err : null
     console.error('Connexion Meta en echec', e?.code, e?.message)
+
+    // Un echec sur les Pages ne se diagnostique pas depuis l'exterieur : le
+    // jeton n'existe que le temps de cet appel. On interroge donc Meta tout de
+    // suite, sous tous les angles, et on range le resultat brut pour pouvoir
+    // le relire. Les jetons y sont caviardes.
+    if (e && (e.code === 'aucune_page' || e.code === 'aucun_instagram')) {
+      try {
+        const diagnostic = await diagnostiquer(token)
+        console.log('Diagnostic Meta', JSON.stringify(diagnostic))
+
+        const db = createClient(SUPABASE_URL, SERVICE_KEY, {
+          auth: { persistSession: false, autoRefreshToken: false },
+        })
+        await db
+          .from('app_settings')
+          .upsert(
+            { key: 'diagnostic_meta', value: diagnostic as never, updated_at: new Date().toISOString() },
+            { onConflict: 'key' },
+          )
+      } catch (err2) {
+        console.error('Diagnostic impossible', String(err2))
+      }
+    }
+
     return json(
       {
         ok: false,
         error: e ? explain(e.message, e.code) : String(err),
         technical: e ? `${e.code}: ${e.message}` : undefined,
+        diagnostic_enregistre: e?.code === 'aucune_page' || e?.code === 'aucun_instagram',
       },
       e?.code === 'missing_secrets' ? 500 : 400,
     )
