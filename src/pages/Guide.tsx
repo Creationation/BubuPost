@@ -385,27 +385,39 @@ export default function Guide() {
             Le seul qui demande une validation humaine, elle prend en general 2 a 4 semaines. Lance
             la demande maintenant, meme si tu branches le compte plus tard.
           </p>
+          <p className="mb-4 rounded-lg border border-ok-600/40 bg-ok-600/10 px-3 py-2 text-xs text-ok-400">
+            Deja fait de mon cote : tes cles sont posees sur le serveur, le fichier de verification
+            de domaine est en ligne, et la connexion est automatisee. Tu n'auras aucun token a
+            copier pour TikTok, contrairement aux autres plateformes.
+          </p>
           <ol className="space-y-3">
             <Step n={1}>
-              Sur <Ext href="https://developers.tiktok.com">developers.tiktok.com</Ext>, cree une
-              app et ajoute le produit "Content Posting API".
+              Sur <Ext href="https://developers.tiktok.com">developers.tiktok.com</Ext>, ouvre ton
+              application et ajoute le produit "Login Kit" en plus de "Content Posting API".
             </Step>
             <Step n={2}>
-              Demande les scopes <Code>video.publish</Code>, <Code>video.upload</Code> et{' '}
-              <Code>user.info.basic</Code>.
+              Dans les reglages du Login Kit, declare cette URL de redirection,{' '}
+              <strong className="text-mist-100">exactement</strong>, au caractere pres :{' '}
+              <Code>https://bubu-post.vercel.app/auth/tiktok/callback</Code>. C'est l'erreur la plus
+              frequente : un slash en trop et TikTok refuse sans expliquer pourquoi.
             </Step>
             <Step n={3}>
+              Demande les scopes <Code>user.info.basic</Code> et <Code>video.publish</Code>.
+            </Step>
+            <Step n={4}>
               TikTok reclame deux adresses, elles sont deja en ligne et accessibles sans compte :{' '}
               <Ext href="/terms">bubu-post.vercel.app/terms</Ext> et{' '}
               <Ext href="/privacy">bubu-post.vercel.app/privacy</Ext>.
             </Step>
-            <Step n={4}>
+            <Step n={5}>
               Ils demandent aussi une video de demonstration. Filme ton ecran pendant que tu crees
               une publication dans l'application, deux minutes suffisent.
             </Step>
-            <Step n={5}>
-              Pour la verification du domaine, ils te donneront un fichier ou une balise a poser.
-              Envoie-la moi, je la mets en ligne.
+            <Step n={6}>
+              Une fois l'application approuvee, va dans l'onglet Comptes et clique sur{' '}
+              <strong className="text-mist-100">Connecter un compte TikTok</strong>. Tu choisis la
+              marque, TikTok te demande d'autoriser, et le compte s'enregistre tout seul. Son token
+              sera ensuite renouvele chaque nuit automatiquement.
             </Step>
           </ol>
           <p className="mt-4 rounded-lg border border-warn-600/40 bg-warn-600/10 px-3 py-2 text-xs text-warn-400">

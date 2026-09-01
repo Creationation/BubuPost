@@ -22,5 +22,14 @@ Deno.serve(async (req) => {
     anthropic: has('ANTHROPIC_API_KEY'),
     telegram: has('TELEGRAM_BOT_TOKEN') && has('TELEGRAM_CHAT_ID'),
     google: has('GOOGLE_CLIENT_ID') && has('GOOGLE_CLIENT_SECRET'),
+    tiktok: has('TIKTOK_CLIENT_KEY') && has('TIKTOK_CLIENT_SECRET'),
+
+    // La client_key TikTok est publique par construction : elle apparait en
+    // clair dans l'URL d'autorisation que voit l'utilisateur. La servir ici
+    // evite d'avoir a la dupliquer dans les variables Vercel, donc une source
+    // de verite en moins a maintenir. Le client_secret, lui, ne sort jamais.
+    tiktok_client_key: Deno.env.get('TIKTOK_CLIENT_KEY')?.trim() ?? null,
+    tiktok_redirect_uri:
+      Deno.env.get('TIKTOK_REDIRECT_URI') ?? 'https://bubu-post.vercel.app/auth/tiktok/callback',
   })
 })

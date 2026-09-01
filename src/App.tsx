@@ -7,6 +7,7 @@ import Posts from './pages/Posts'
 import Accounts from './pages/Accounts'
 import Admin from './pages/Admin'
 import Guide from './pages/Guide'
+import TikTokCallback from './pages/TikTokCallback'
 import { Privacy, Terms } from './pages/Legal'
 
 /** Les pages protegees, derriere le login. */
@@ -32,6 +33,7 @@ function Private() {
         <Route path="guide" element={<Guide />} />
         <Route path="admin" element={<Admin />} />
       </Route>
+      <Route path="auth/tiktok/callback" element={<TikTokCallback />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
+import { useLocation } from 'react-router-dom'
+import { buildTikTokAuthUrl } from '../lib/tiktok'
 import {
   checkAccount,
   createAccount,
@@ -60,6 +62,23 @@ export default function Accounts() {
   const [checks, setChecks] = useState<Record<string, AccountCheck>>({})
   const [testing, setTesting] = useState<string | null>(null)
 
+  const [connectingTikTok, setConnectingTikTok] = useState(false)
+
+  // Message rapporte par la page de retour TikTok apres une connexion reussie.
+  const location = useLocation()
+  const [notice, setNotice] = useState<string | null>(
+    (location.state as { notice?: string } | null)?.notice ?? null,
+  )
+
+  useEffect(() => {
+    if (!notice) return
+    // On vide l'etat de navigation, sinon un rechargement de la page reafficherait
+    // la confirmation d'une connexion faite il y a longtemps.
+    window.history.replaceState({}, '')
+    const t = setTimeout(() => setNotice(null), 8000)
+    return () => clearTimeout(t)
+  }, [notice])
+
   const reload = useCallback(async () => {
     setLoading(true)
     try {
@@ -113,11 +132,22 @@ export default function Accounts() {
         title="Comptes"
         subtitle={`${accounts.length} compte${accounts.length > 1 ? 's' : ''} enregistre${accounts.length > 1 ? 's' : ''}`}
         action={
-          <button className="btn btn-primary" onClick={() => setCreating(true)}>
-            Ajouter un compte
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn btn-ghost" onClick={() => setConnectingTikTok(true)}>
+              Connecter un compte TikTok
+            </button>
+            <button className="btn btn-primary" onClick={() => setCreating(true)}>
+              Ajouter un compte
+            </button>
+          </div>
         }
       />
+
+      {notice && (
+        <div className="mb-4">
+          <Alert kind="ok">{notice}</Alert>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4">
@@ -221,6 +251,12 @@ export default function Accounts() {
         }}
       />
 
+      <TikTokConnect
+        open={connectingTikTok}
+        brands={[...new Set(accounts.map((a) => a.brand))].sort()}
+        onClose={() => setConnectingTikTok(false)}
+      />
+
       <ConfirmModal
         open={toDelete !== null}
         title="Supprimer ce compte"
@@ -231,6 +267,96 @@ export default function Accounts() {
         onClose={() => setToDelete(null)}
       />
     </div>
+  )
+}
+
+/**
+ * Connexion TikTok en un clic.
+ *
+ * On demande la marque avant de partir : au retour, TikTok ne dit pas a quelle
+ * marque rattacher le compte, et l'information serait perdue. Elle voyage donc
+ * dans le sessionStorage, a cote du jeton anti-CSRF.
+ */
+function TikTokConnect({
+  open,
+  brands,
+  onClose,
+}: {
+  open: boolean
+  brands: string[]
+  onClose: () => void
+}) {
+  const [brand, setBrand] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setBrand(brands[0] ?? '')
+    setError(null)
+    setBusy(false)
+  }, [open, brands])
+
+  async function go() {
+    if (!brand.trim()) {
+      setError('Indique la marque a laquelle rattacher ce compte')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      window.location.href = await buildTikTokAuthUrl(brand.trim())
+    } catch (err) {
+      setError(friendlyError(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open={open} title="Connecter un compte TikTok" onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-sm text-mist-300">
+          TikTok va te demander d'autoriser BubuPost, puis te ramenera ici. Le compte sera
+          enregistre tout seul, tu n'as aucun token a copier.
+        </p>
+
+        <div>
+          <label className="label" htmlFor="tiktok-brand">
+            Marque
+          </label>
+          <input
+            id="tiktok-brand"
+            className="field"
+            value={brand}
+            onChange={(e) => setBrand(e.target.value)}
+            placeholder="EdgeSyncFX"
+            list="brands-tiktok"
+          />
+          <datalist id="brands-tiktok">
+            {brands.map((b) => (
+              <option key={b} value={b} />
+            ))}
+            <option value="EdgeSyncFX" />
+            <option value="TchabaRimonda" />
+          </datalist>
+          <p className="mt-1 text-xs text-mist-600">
+            TikTok ne nous dira pas a quelle marque rattacher le compte, d'ou cette question avant
+            de partir.
+          </p>
+        </div>
+
+        {error && <Alert kind="error">{error}</Alert>}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button className="btn btn-ghost" onClick={onClose}>
+            Annuler
+          </button>
+          <button className="btn btn-primary" onClick={() => void go()} disabled={busy}>
+            {busy ? 'Redirection...' : 'Continuer vers TikTok'}
+          </button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
@@ -395,6 +521,17 @@ function AccountForm({
           </p>
         </div>
 
+        {/* TikTok a son flow automatise : proposer la saisie manuelle du token
+            ici inviterait a se tromper, alors qu'un bouton fait tout. Les
+            autres plateformes gardent le formulaire, leur flow n'existe pas. */}
+        {form.platform === 'tiktok' && !account ? (
+          <Alert kind="info">
+            Pour TikTok, ferme cette fenetre et utilise le bouton{' '}
+            <strong className="text-mist-100">Connecter un compte TikTok</strong> en haut de la
+            page. Le token est recupere automatiquement, il n'y a rien a coller.
+          </Alert>
+        ) : (
+        <>
         <div>
           <div className="flex items-baseline justify-between">
             <label className="label" htmlFor="access_token">
@@ -462,6 +599,8 @@ function AccountForm({
             Optionnel, mais c'est ce qui declenche l'alerte avant que le token ne lache.
           </p>
         </div>
+        </>
+        )}
 
         {error && <Alert kind="error">{error}</Alert>}
 

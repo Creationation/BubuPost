@@ -216,7 +216,15 @@ export async function saveSetting(key: string, value: unknown): Promise<void> {
   )
 }
 
-export type SetupStatus = { anthropic: boolean; telegram: boolean; google: boolean }
+export type SetupStatus = {
+  anthropic: boolean
+  telegram: boolean
+  google: boolean
+  tiktok?: boolean
+  /** Publique par construction : elle apparait en clair dans l'URL d'autorisation. */
+  tiktok_client_key?: string | null
+  tiktok_redirect_uri?: string | null
+}
 
 /**
  * Quelles cles serveur sont en place. Ne renvoie que des booleens, jamais les
