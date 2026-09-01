@@ -1,26 +1,68 @@
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
 
 const CONTACT = 'renardiego@gmail.com'
 const UPDATED = '1 septembre 2026'
 
+/**
+ * Bouton retour.
+ *
+ * Deux situations bien differentes. Si on arrive de l'application, on veut
+ * revenir exactement d'ou l'on vient. Si on ouvre l'adresse directement, par
+ * exemple un reviewer TikTok qui colle le lien, il n'y a pas d'historique :
+ * un retour navigateur ferait sortir du site. Dans ce cas on renvoie vers
+ * l'accueil. `location.key` vaut 'default' quand la page est la premiere de
+ * l'historique, c'est ce qui permet de distinguer les deux cas.
+ */
+function BackButton({ className = '' }: { className?: string }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const cameFromApp = location.key !== 'default'
+
+  return (
+    <button
+      type="button"
+      onClick={() => (cameFromApp ? navigate(-1) : navigate('/'))}
+      className={`btn btn-ghost ${className}`}
+    >
+      <span aria-hidden="true">←</span>
+      {cameFromApp ? 'Retour' : "Retour a l'application"}
+    </button>
+  )
+}
+
 function LegalShell({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="mx-auto min-h-full w-full max-w-3xl px-5 py-12">
+    <div className="mx-auto min-h-full w-full max-w-3xl px-5 pb-12">
+      {/* Barre collante : le bouton retour reste atteignable meme au milieu
+          d'une page longue, sans avoir a remonter tout en haut. */}
+      <div className="sticky top-0 z-10 -mx-5 mb-8 border-b border-ink-800 bg-ink-950/85 px-5 py-3 backdrop-blur">
+        <div className="flex items-center justify-between gap-3">
+          <BackButton />
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-sm text-mist-500 hover:text-mist-100"
+          >
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-brand-500/30 bg-brand-500/15 text-xs">
+              🚀
+            </span>
+            BubuPost
+          </Link>
+        </div>
+      </div>
+
       <header className="mb-10">
-        <Link to="/" className="inline-flex items-center gap-2 text-sm text-mist-500 hover:text-mist-100">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-brand-500/30 bg-brand-500/15 text-xs">
-            🚀
-          </span>
-          BubuPost
-        </Link>
-        <h1 className="mt-6 text-2xl font-bold tracking-tight lg:text-3xl">{title}</h1>
+        <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">{title}</h1>
         <p className="mt-2 text-sm text-mist-500">Derniere mise a jour : {UPDATED}</p>
       </header>
 
       <div className="space-y-8 text-[15px] leading-relaxed text-mist-300">{children}</div>
 
-      <footer className="mt-14 border-t border-ink-800 pt-6 text-sm text-mist-600">
+      <div className="mt-12 border-t border-ink-800 pt-6">
+        <BackButton />
+      </div>
+
+      <footer className="mt-8 text-sm text-mist-600">
         <div className="flex flex-wrap gap-4">
           <Link to="/terms" className="hover:text-mist-300">
             Terms of Service
