@@ -67,14 +67,15 @@ function extractJson(text: string): { caption: string; hashtags: string[] } {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
-  if (!apiKey) return json({ error: 'Secret ANTHROPIC_API_KEY absent de la fonction' }, 500)
-
-  // Reservee aux utilisateurs connectes : c'est un appel payant.
+  // L'autorisation d'abord : un appelant anonyme n'a pas a apprendre quelles
+  // cles sont configurees ici, et c'est un appel payant.
   const bearer = (req.headers.get('Authorization') ?? '').replace('Bearer ', '').trim()
   const check = createClient(SUPABASE_URL, ANON_KEY)
   const { data: userData, error: userErr } = await check.auth.getUser(bearer)
   if (userErr || !userData.user) return json({ error: 'Non autorise' }, 401)
+
+  const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
+  if (!apiKey) return json({ error: 'Secret ANTHROPIC_API_KEY absent de la fonction' }, 500)
 
   let body: Body
   try {
