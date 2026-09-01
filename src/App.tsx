@@ -5,13 +5,16 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Posts from './pages/Posts'
 import Accounts from './pages/Accounts'
+import Admin from './pages/Admin'
+import { Privacy, Terms } from './pages/Legal'
 
-function Gate() {
+/** Les pages protegees, derriere le login. */
+function Private() {
   const { session, loading } = useAuth()
 
   if (loading) {
     return (
-      <div className="min-h-full grid place-items-center">
+      <div className="grid min-h-full place-items-center">
         <p className="text-sm text-mist-500">Chargement...</p>
       </div>
     )
@@ -25,6 +28,7 @@ function Gate() {
         <Route index element={<Dashboard />} />
         <Route path="posts" element={<Posts />} />
         <Route path="accounts" element={<Accounts />} />
+        <Route path="admin" element={<Admin />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -35,7 +39,12 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Gate />
+        <Routes>
+          {/* Publiques : les reviewers des plateformes doivent y acceder sans compte. */}
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/*" element={<Private />} />
+        </Routes>
       </AuthProvider>
     </BrowserRouter>
   )

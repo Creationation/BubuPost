@@ -1,19 +1,33 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: '◧', end: true },
   { to: '/posts', label: 'Publications', icon: '▤', end: false },
   { to: '/accounts', label: 'Comptes', icon: '◍', end: false },
+  { to: '/admin', label: 'Admin', icon: '⚙', end: false },
 ]
 
 function navClass({ isActive }: { isActive: boolean }) {
   return [
     'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
     isActive
-      ? 'bg-brand-500/15 text-mist-100 border border-brand-500/30'
-      : 'text-mist-500 hover:text-mist-100 hover:bg-ink-800 border border-transparent',
+      ? 'border border-brand-500/30 bg-brand-500/15 text-mist-100'
+      : 'border border-transparent text-mist-500 hover:bg-ink-800 hover:text-mist-100',
   ].join(' ')
+}
+
+function LegalLinks({ className = '' }: { className?: string }) {
+  return (
+    <div className={`flex flex-wrap gap-x-4 gap-y-1 text-xs text-mist-600 ${className}`}>
+      <Link to="/terms" className="hover:text-mist-300">
+        Terms of Service
+      </Link>
+      <Link to="/privacy" className="hover:text-mist-300">
+        Privacy Policy
+      </Link>
+    </div>
+  )
 }
 
 export default function Layout() {
@@ -21,9 +35,9 @@ export default function Layout() {
 
   return (
     <div className="min-h-full lg:flex">
-      <aside className="hidden lg:flex lg:w-60 lg:flex-col lg:shrink-0 border-r border-ink-800 p-4">
+      <aside className="hidden border-r border-ink-800 p-4 lg:flex lg:w-60 lg:shrink-0 lg:flex-col">
         <div className="mb-8 flex items-center gap-2 px-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500/15 border border-brand-500/30 text-sm">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-brand-500/30 bg-brand-500/15 text-sm">
             🚀
           </span>
           <span className="font-bold tracking-tight">BubuPost</span>
@@ -38,26 +52,33 @@ export default function Layout() {
           ))}
         </nav>
 
-        <div className="mt-auto pt-4 border-t border-ink-800">
-          <p className="px-2 pb-2 text-xs text-mist-600 truncate">{user?.email}</p>
+        <div className="mt-auto space-y-3 border-t border-ink-800 pt-4">
+          <p className="truncate px-2 text-xs text-mist-600">{user?.email}</p>
           <button className="btn btn-ghost w-full" onClick={() => void signOut()}>
             Deconnexion
           </button>
+          <LegalLinks className="px-2" />
         </div>
       </aside>
 
-      <header className="lg:hidden sticky top-0 z-20 flex items-center justify-between border-b border-ink-800 bg-ink-950/85 px-4 py-3 backdrop-blur">
+      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-ink-800 bg-ink-950/85 px-4 py-3 backdrop-blur lg:hidden">
         <span className="font-bold tracking-tight">BubuPost</span>
-        <button className="btn btn-ghost !py-1.5 !px-3" onClick={() => void signOut()}>
+        <button className="btn btn-ghost !px-3 !py-1.5" onClick={() => void signOut()}>
           Quitter
         </button>
       </header>
 
-      <main className="flex-1 min-w-0 px-4 pb-24 pt-6 lg:px-8 lg:pb-10">
-        <Outlet />
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <main className="flex-1 px-4 pt-6 pb-24 lg:px-8 lg:pb-10">
+          <Outlet />
+        </main>
 
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-20 grid grid-cols-3 gap-1 border-t border-ink-800 bg-ink-950/95 p-2 backdrop-blur">
+        <footer className="border-t border-ink-800 px-4 py-5 lg:px-8">
+          <LegalLinks />
+        </footer>
+      </div>
+
+      <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-4 gap-1 border-t border-ink-800 bg-ink-950/95 p-2 backdrop-blur lg:hidden">
         {NAV.map((item) => (
           <NavLink key={item.to} to={item.to} end={item.end} className={navClass}>
             <span className="mx-auto flex flex-col items-center gap-0.5">
