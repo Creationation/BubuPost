@@ -77,6 +77,14 @@ export async function buildTikTokAuthUrl(brand: string): Promise<string> {
     redirect_uri:
       status.tiktok_redirect_uri ?? `${window.location.origin}/auth/tiktok/callback`,
     state,
+
+    // Force TikTok a reafficher l'ecran de consentement complet, avec le detail
+    // des permissions, meme si l'app a deja ete autorisee. Sans ce parametre,
+    // TikTok renvoie directement un code en reconduisant les scopes deja
+    // accordes : un scope refuse au premier essai, comme video.publish, ne
+    // serait alors plus jamais represente, et la connexion aboutirait sur un
+    // compte incapable de publier.
+    disable_auto_auth: '1',
   })
 
   return `${AUTHORIZE_URL}?${params.toString()}`
