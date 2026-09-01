@@ -62,6 +62,7 @@ async function renouveler(db: SupabaseClient, compte: Compte): Promise<string> {
         refresh_token: tokens.refreshToken ?? compte.refresh_token,
         token_expiry: expiry,
         status: 'active',
+        scope: tokens.scope ?? undefined,
       })
       .eq('id', compte.id)
 

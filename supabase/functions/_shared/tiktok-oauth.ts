@@ -4,6 +4,7 @@
 
 const TOKEN_URL = 'https://open.tiktokapis.com/v2/oauth/token/'
 const USER_INFO_URL = 'https://open.tiktokapis.com/v2/user/info/'
+const CREATOR_INFO_URL = 'https://open.tiktokapis.com/v2/post/publish/creator_info/query/'
 
 /** Doit correspondre au caractere pres a l'URL declaree dans la console TikTok. */
 export const REDIRECT_URI =
@@ -162,14 +163,40 @@ export function rafraichir(refreshToken: string): Promise<TikTokTokens> {
  * Un echec ici n'est pas bloquant.
  */
 export async function nomDuCompte(accessToken: string): Promise<string | null> {
+  // D'abord l'endpoint de publication : il donne le nom d'utilisateur reel
+  // sans exiger le scope user.info.profile, contrairement au champ username
+  // de /user/info/, qui fait echouer toute la requete s'il est demande sans
+  // ce scope. C'est exactement ce qui nommait les comptes "TikTok -000-Lx4".
   try {
-    const res = await fetch(`${USER_INFO_URL}?fields=display_name,username`, {
+    const res = await fetch(CREATOR_INFO_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json; charset=UTF-8',
+      },
+    })
+    if (res.ok) {
+      const json = await res.json()
+      const data = (json?.data ?? {}) as Record<string, unknown>
+      if (typeof data.creator_username === 'string' && data.creator_username) {
+        return `@${data.creator_username}`
+      }
+      if (typeof data.creator_nickname === 'string' && data.creator_nickname) {
+        return data.creator_nickname
+      }
+    }
+  } catch {
+    // On tente le profil juste en dessous.
+  }
+
+  // Repli : display_name seul, couvert par user.info.basic.
+  try {
+    const res = await fetch(`${USER_INFO_URL}?fields=display_name`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
     if (!res.ok) return null
     const json = await res.json()
     const user = (json?.data?.user ?? {}) as Record<string, unknown>
-    if (typeof user.username === 'string' && user.username) return `@${user.username}`
     if (typeof user.display_name === 'string' && user.display_name) return user.display_name
     return null
   } catch {

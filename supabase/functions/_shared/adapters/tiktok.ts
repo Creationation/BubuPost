@@ -90,25 +90,44 @@ export const tiktok: PlatformAdapter = {
     return Promise.resolve(containerId)
   },
 
+  /**
+   * Verification par l'endpoint de publication plutot que par le profil.
+   *
+   * C'est lui qui compte : il ne repond que si video.publish est reellement
+   * accorde, donc un succes ici prouve que le compte peut publier. Il renvoie
+   * en prime le nom d'utilisateur, sans exiger le scope user.info.profile.
+   *
+   * Ne jamais revenir a /user/info/?fields=...,username : le champ username
+   * demande le scope user.info.profile, que l'application ne requiert pas. Un
+   * seul champ non autorise fait echouer toute la requete en
+   * scope_not_authorized, et le compte etait affiche en erreur alors que tout
+   * fonctionnait.
+   */
   async verify(account: Account): Promise<string> {
     const token = requireToken(account)
 
     const json = await apiFetch(
-      `${API}/user/info/?fields=display_name,username`,
-      { method: 'GET', headers: { Authorization: `Bearer ${token}` } },
-      'TikTok verification du compte',
+      `${API}/post/publish/creator_info/query/`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+      },
+      'TikTok verification du droit de publier',
     )
 
     const data = (json.data ?? {}) as Record<string, unknown>
-    const user = (data.user ?? {}) as Record<string, unknown>
-    const name = user.display_name ?? user.username
+    const username = data.creator_username
+    const nickname = data.creator_nickname
 
-    if (typeof name !== 'string') {
-      throw new PlatformError(
-        "TikTok repond mais ne donne pas le nom du compte. Le scope user.info.basic n'est peut-etre pas accorde.",
-        { detail: json },
-      )
-    }
-    return String(name)
+    if (typeof username === 'string' && username) return `@${username}`
+    if (typeof nickname === 'string' && nickname) return nickname
+
+    throw new PlatformError(
+      "TikTok accepte le token mais ne renvoie pas le nom du compte. Reconnecte le compte depuis le bouton Connecter un compte TikTok.",
+      { detail: json },
+    )
   },
 }

@@ -85,6 +85,9 @@ Deno.serve(async (req) => {
     refresh_token: tokens.refreshToken,
     token_expiry: expiry,
     status: 'active',
+    // Conserve pour pouvoir repondre plus tard a « ce compte peut-il publier »
+    // sans avoir a reinterroger TikTok.
+    scope: tokens.scope,
   }
 
   // 3. Enregistrer. On cherche d'abord un compte deja connecte avec le meme

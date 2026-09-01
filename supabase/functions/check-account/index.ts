@@ -82,8 +82,18 @@ Deno.serve(async (req) => {
     const name = await adapter.verify(typed)
 
     // Le compte repond : on le remet actif s'il etait tombe en erreur.
-    if (typed.status === 'error' || typed.status === 'expired') {
-      await db.from('accounts').update({ status: 'active' }).eq('id', accountId)
+    const correctif: Record<string, string> = {}
+    if (typed.status === 'error' || typed.status === 'expired') correctif.status = 'active'
+
+    // Repare aussi les noms de repli du genre "TikTok -000-Lx4", poses quand la
+    // plateforme n'avait pas pu donner le vrai nom. On ne touche jamais a un
+    // nom choisi a la main.
+    if (/^TikTok [A-Za-z0-9_-]{0,12}$/.test(typed.account_name) && name !== typed.account_name) {
+      correctif.account_name = name
+    }
+
+    if (Object.keys(correctif).length > 0) {
+      await db.from('accounts').update(correctif).eq('id', accountId)
     }
 
     return json({
