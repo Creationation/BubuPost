@@ -40,7 +40,11 @@ export function explain(message: string, code: string): string {
     return "Il manque une permission. Relance la connexion et accepte bien l'acces aux Pages et a la publication Instagram."
   }
   if (m.includes('aucune_page')) {
-    return "Aucune Page Facebook n'est accessible avec ce compte. Verifie que tu es bien administrateur d'au moins une Page, et qu'elle a ete cochee pendant la connexion."
+    return [
+      "Facebook a bien accepte la connexion et accorde toutes les permissions, mais il ne rattache aucune Page a l'application.",
+      "Sur l'ecran d'autorisation, il y a deux etapes distinctes : le choix des comptes Instagram, puis le choix des Pages Facebook.",
+      "C'est la seconde qui compte ici. Si elle ne s'affiche pas, ou si aucune Page n'y est cochee, la liste revient vide comme maintenant.",
+    ].join(' ')
   }
   if (m.includes('aucun_instagram')) {
     return "Aucune de tes Pages n'a de compte Instagram professionnel rattache. Dans Instagram, passe le compte en Professionnel, puis relie-le a ta Page Facebook."

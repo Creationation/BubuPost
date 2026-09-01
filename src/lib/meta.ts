@@ -75,9 +75,6 @@ export async function buildMetaAuthUrl(brand: string): Promise<string> {
   const params = new URLSearchParams({
     client_id: id,
     display: 'page',
-    // Declenche le parcours d'integration Instagram, qui fait choisir la Page
-    // et renvoie directement un jeton de longue duree.
-    extras: JSON.stringify({ setup: { channel: 'IG_API_ONBOARDING' } }),
     redirect_uri:
       status.meta_redirect_uri ?? `${window.location.origin}/auth/meta/callback`,
     response_type: 'token',

@@ -50,7 +50,7 @@ async function sonder(nom: string, url: string) {
 export async function diagnostiquer(userToken: string) {
   const t = encodeURIComponent(userToken)
 
-  const appels = await Promise.all([
+  const appels: Array<Record<string, unknown>> = await Promise.all([
     sonder('me', `${GRAPH}/me?fields=id,name&access_token=${t}`),
 
     // La question centrale : quelles permissions Meta a-t-il vraiment accordees.
@@ -78,9 +78,20 @@ export async function diagnostiquer(userToken: string) {
       `https://graph.instagram.com/v21.0/me?fields=id,username&access_token=${t}`,
     ),
 
-    // Nature du jeton : a qui il appartient, et pour quelle application.
-    sonder('debug_token', `${GRAPH}/debug_token?input_token=${t}&access_token=${t}`),
   ])
+
+  // debug_token repond parfois une erreur transitoire, alors que c'est l'appel
+  // le plus important : son champ granular_scopes dit exactement a quelles
+  // Pages l'application a recu acces. On insiste.
+  let debug = await sonder('debug_token', `${GRAPH}/debug_token?input_token=${t}&access_token=${t}`)
+  for (let i = 0; i < 2 && debug.http >= 500; i++) {
+    await new Promise((r) => setTimeout(r, 1200))
+    debug = await sonder(
+      `debug_token (tentative ${i + 2})`,
+      `${GRAPH}/debug_token?input_token=${t}&access_token=${t}`,
+    )
+  }
+  appels.push(debug)
 
   return {
     date: new Date().toISOString(),
