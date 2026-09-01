@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useLocation } from 'react-router-dom'
 import { buildTikTokAuthUrl } from '../lib/tiktok'
+import { buildMetaAuthUrl } from '../lib/meta'
 import {
   checkAccount,
   createAccount,
@@ -62,7 +63,7 @@ export default function Accounts() {
   const [checks, setChecks] = useState<Record<string, AccountCheck>>({})
   const [testing, setTesting] = useState<string | null>(null)
 
-  const [connectingTikTok, setConnectingTikTok] = useState(false)
+  const [connecting, setConnecting] = useState<'tiktok' | 'instagram' | null>(null)
 
   // Message rapporte par la page de retour TikTok apres une connexion reussie.
   const location = useLocation()
@@ -133,7 +134,10 @@ export default function Accounts() {
         subtitle={`${accounts.length} compte${accounts.length > 1 ? 's' : ''} enregistre${accounts.length > 1 ? 's' : ''}`}
         action={
           <div className="flex flex-wrap gap-2">
-            <button className="btn btn-ghost" onClick={() => setConnectingTikTok(true)}>
+            <button className="btn btn-ghost" onClick={() => setConnecting('instagram')}>
+              Connecter un compte Instagram
+            </button>
+            <button className="btn btn-ghost" onClick={() => setConnecting('tiktok')}>
               Connecter un compte TikTok
             </button>
             <button className="btn btn-primary" onClick={() => setCreating(true)}>
@@ -251,10 +255,10 @@ export default function Accounts() {
         }}
       />
 
-      <TikTokConnect
-        open={connectingTikTok}
+      <ConnexionOAuth
+        plateforme={connecting}
         brands={[...new Set(accounts.map((a) => a.brand))].sort()}
-        onClose={() => setConnectingTikTok(false)}
+        onClose={() => setConnecting(null)}
       />
 
       <ConfirmModal
@@ -270,19 +274,41 @@ export default function Accounts() {
   )
 }
 
+type Plateforme = 'tiktok' | 'instagram'
+
+const CONNEXIONS: Record<
+  Plateforme,
+  { titre: string; bouton: string; intro: string; construire: (brand: string) => Promise<string> }
+> = {
+  tiktok: {
+    titre: 'Connecter un compte TikTok',
+    bouton: 'Continuer vers TikTok',
+    intro:
+      "TikTok va te demander d'autoriser BubuPost, puis te ramenera ici. Le compte sera enregistre tout seul, tu n'as aucun token a copier.",
+    construire: buildTikTokAuthUrl,
+  },
+  instagram: {
+    titre: 'Connecter un compte Instagram',
+    bouton: 'Continuer vers Facebook',
+    intro:
+      "Facebook va te demander d'autoriser BubuPost, puis te ramenera ici. Choisis bien la Page liee a ton compte Instagram professionnel : c'est elle qui donne le droit de publier.",
+    construire: buildMetaAuthUrl,
+  },
+}
+
 /**
- * Connexion TikTok en un clic.
+ * Connexion en un clic, commune aux plateformes automatisees.
  *
- * On demande la marque avant de partir : au retour, TikTok ne dit pas a quelle
- * marque rattacher le compte, et l'information serait perdue. Elle voyage donc
- * dans le sessionStorage, a cote du jeton anti-CSRF.
+ * On demande la marque avant de partir : au retour, ni TikTok ni Meta ne
+ * disent a quelle marque rattacher le compte, et l'information serait perdue.
+ * Elle voyage donc dans le sessionStorage, a cote du jeton anti-CSRF.
  */
-function TikTokConnect({
-  open,
+function ConnexionOAuth({
+  plateforme,
   brands,
   onClose,
 }: {
-  open: boolean
+  plateforme: Plateforme | null
   brands: string[]
   onClose: () => void
 }) {
@@ -291,13 +317,16 @@ function TikTokConnect({
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!open) return
+    if (!plateforme) return
     setBrand(brands[0] ?? '')
     setError(null)
     setBusy(false)
-  }, [open, brands])
+  }, [plateforme, brands])
+
+  const config = plateforme ? CONNEXIONS[plateforme] : null
 
   async function go() {
+    if (!config) return
     if (!brand.trim()) {
       setError('Indique la marque a laquelle rattacher ce compte')
       return
@@ -305,7 +334,7 @@ function TikTokConnect({
     setBusy(true)
     setError(null)
     try {
-      window.location.href = await buildTikTokAuthUrl(brand.trim())
+      window.location.href = await config.construire(brand.trim())
     } catch (err) {
       setError(friendlyError(err))
       setBusy(false)
@@ -313,26 +342,23 @@ function TikTokConnect({
   }
 
   return (
-    <Modal open={open} title="Connecter un compte TikTok" onClose={onClose}>
+    <Modal open={plateforme !== null} title={config?.titre ?? ''} onClose={onClose}>
       <div className="space-y-4">
-        <p className="text-sm text-mist-300">
-          TikTok va te demander d'autoriser BubuPost, puis te ramenera ici. Le compte sera
-          enregistre tout seul, tu n'as aucun token a copier.
-        </p>
+        <p className="text-sm text-mist-300">{config?.intro}</p>
 
         <div>
-          <label className="label" htmlFor="tiktok-brand">
+          <label className="label" htmlFor="oauth-brand">
             Marque
           </label>
           <input
-            id="tiktok-brand"
+            id="oauth-brand"
             className="field"
             value={brand}
             onChange={(e) => setBrand(e.target.value)}
             placeholder="EdgeSyncFX"
-            list="brands-tiktok"
+            list="brands-oauth"
           />
-          <datalist id="brands-tiktok">
+          <datalist id="brands-oauth">
             {brands.map((b) => (
               <option key={b} value={b} />
             ))}
@@ -340,8 +366,8 @@ function TikTokConnect({
             <option value="TchabaRimonda" />
           </datalist>
           <p className="mt-1 text-xs text-mist-600">
-            TikTok ne nous dira pas a quelle marque rattacher le compte, d'ou cette question avant
-            de partir.
+            La plateforme ne nous dira pas a quelle marque rattacher le compte, d'ou cette question
+            avant de partir.
           </p>
         </div>
 
@@ -352,7 +378,7 @@ function TikTokConnect({
             Annuler
           </button>
           <button className="btn btn-primary" onClick={() => void go()} disabled={busy}>
-            {busy ? 'Redirection...' : 'Continuer vers TikTok'}
+            {busy ? 'Redirection...' : config?.bouton}
           </button>
         </div>
       </div>

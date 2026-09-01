@@ -29,6 +29,14 @@ Deno.serve(async (req) => {
     // evite d'avoir a la dupliquer dans les variables Vercel, donc une source
     // de verite en moins a maintenir. Le client_secret, lui, ne sort jamais.
     tiktok_client_key: Deno.env.get('TIKTOK_CLIENT_KEY')?.trim() ?? null,
+    meta: has('META_APP_ID') && has('META_APP_SECRET'),
+
+    // L'App ID Meta est public : il apparait en clair dans l'URL
+    // d'autorisation. Le secret, lui, ne sort jamais d'ici.
+    meta_app_id: Deno.env.get('META_APP_ID')?.trim() ?? null,
+    meta_redirect_uri:
+      Deno.env.get('META_REDIRECT_URI') ?? 'https://bubu-post.vercel.app/auth/meta/callback',
+
     tiktok_redirect_uri:
       Deno.env.get('TIKTOK_REDIRECT_URI') ?? 'https://bubu-post.vercel.app/auth/tiktok/callback',
   })

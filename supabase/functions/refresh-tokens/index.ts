@@ -1,12 +1,21 @@
-// Renouvellement automatique des tokens TikTok.
+// Renouvellement automatique des tokens, toutes plateformes.
 //
-// Un access token TikTok ne vit que 24 h. Sans ce passage quotidien, la
-// premiere publication du lendemain echouerait, et il faudrait tout
-// reconnecter a la main. Le refresh token, lui, tient un an.
+// TikTok : l access token ne vit que 24 h, sans ce passage quotidien la
+// premiere publication du lendemain echouerait.
+// Instagram : le Page Access Token qui publie ne perime pas de lui-meme, mais
+// il cesse de fonctionner quand le jeton utilisateur dont il derive expire,
+// au bout de 60 jours. On prolonge donc le jeton utilisateur, puis on en tire
+// un jeton de Page neuf.
 import { createClient, SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders, json } from '../_shared/cors.ts'
 import { TikTokOAuthError, explain, rafraichir } from '../_shared/tiktok-oauth.ts'
 import { notifyTelegram } from '../_shared/notify.ts'
+import {
+  MetaError,
+  explain as expliquerMeta,
+  pagesAvecInstagram,
+  prolongerJeton,
+} from '../_shared/meta-oauth.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -30,14 +39,16 @@ function jwtRole(token: string): string | null {
 
 type Compte = {
   id: string
+  platform: string
   account_name: string
   brand: string
+  external_account_id: string | null
   refresh_token: string | null
   token_expiry: string | null
   status: string
 }
 
-async function renouveler(db: SupabaseClient, compte: Compte): Promise<string> {
+async function renouvelerTikTok(db: SupabaseClient, compte: Compte): Promise<string> {
   if (!compte.refresh_token) {
     await db.from('accounts').update({ status: 'expired' }).eq('id', compte.id)
     console.warn(`${compte.account_name} : aucun refresh token, statut passe a expired`)
@@ -98,6 +109,82 @@ async function renouveler(db: SupabaseClient, compte: Compte): Promise<string> {
   }
 }
 
+/**
+ * Instagram : on prolonge le jeton utilisateur, puis on en tire un jeton de
+ * Page neuf. Reecrire le meme jeton de Page ne servirait a rien, c'est le
+ * jeton utilisateur en amont qui perime, au bout de 60 jours.
+ */
+async function renouvelerInstagram(db: SupabaseClient, compte: Compte): Promise<string> {
+  if (!compte.refresh_token) {
+    await db.from('accounts').update({ status: 'expired' }).eq('id', compte.id)
+    await notifyTelegram(
+      `⚠️ Instagram : le compte ${compte.account_name} n'a pas de jeton utilisateur enregistre. Reconnecte-le depuis l'onglet Comptes.`,
+    )
+    return 'sans jeton utilisateur'
+  }
+
+  try {
+    const prolonge = await prolongerJeton(compte.refresh_token)
+    const pages = await pagesAvecInstagram(prolonge.token)
+
+    const page = pages.find((p) => p.ig_user_id === compte.external_account_id)
+    if (!page) {
+      await db.from('accounts').update({ status: 'expired' }).eq('id', compte.id)
+      await notifyTelegram(
+        `❌ Instagram : le compte ${compte.account_name} n'est plus accessible avec cette autorisation. La Page a peut-etre ete dissociee. Reconnecte-le.`,
+      )
+      return 'compte introuvable dans les Pages'
+    }
+
+    const expiry = prolonge.expiresIn
+      ? new Date(Date.now() + prolonge.expiresIn * 1000).toISOString()
+      : null
+
+    const { error } = await db
+      .from('accounts')
+      .update({
+        access_token: page.page_access_token,
+        refresh_token: prolonge.token,
+        token_expiry: expiry,
+        status: 'active',
+      })
+      .eq('id', compte.id)
+
+    if (error) {
+      console.error(`${compte.account_name} : ecriture impossible`, error.message)
+      return `echec ecriture : ${error.message}`
+    }
+
+    console.log(`${compte.account_name} : jeton renouvele jusqu'a ${expiry}`)
+    return 'renouvele'
+  } catch (err) {
+    const e = err instanceof MetaError ? err : null
+    const raison = e ? expliquerMeta(e.message, e.code) : String(err)
+
+    await db.from('accounts').update({ status: 'expired' }).eq('id', compte.id)
+    console.error(`${compte.account_name} : renouvellement en echec`, e?.code, e?.message)
+
+    await notifyTelegram(
+      [
+        '❌ <b>Instagram : renouvellement impossible</b>',
+        `Compte : ${compte.account_name}`,
+        `Marque : ${compte.brand}`,
+        '',
+        `Raison : ${raison}`,
+        '',
+        "Le compte est passe en expire. Reconnecte-le depuis l'onglet Comptes.",
+      ].join('\n'),
+    )
+    return `echec : ${raison}`
+  }
+}
+
+/** Aiguillage par plateforme. */
+function renouveler(db: SupabaseClient, compte: Compte): Promise<string> {
+  if (compte.platform === 'instagram') return renouvelerInstagram(db, compte)
+  return renouvelerTikTok(db, compte)
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -121,8 +208,8 @@ Deno.serve(async (req) => {
   // Les comptes en pause sont volontairement laisses de cote.
   const { data: comptes, error } = await db
     .from('accounts')
-    .select('id, account_name, brand, refresh_token, token_expiry, status')
-    .eq('platform', 'tiktok')
+    .select('id, platform, account_name, brand, external_account_id, refresh_token, token_expiry, status')
+    .in('platform', ['tiktok', 'instagram'])
     .in('status', ['active', 'error', 'expired'])
     .or(`token_expiry.is.null,token_expiry.lte.${limite}`)
 

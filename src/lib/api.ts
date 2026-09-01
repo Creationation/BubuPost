@@ -239,6 +239,10 @@ export type SetupStatus = {
   /** Publique par construction : elle apparait en clair dans l'URL d'autorisation. */
   tiktok_client_key?: string | null
   tiktok_redirect_uri?: string | null
+  meta?: boolean
+  /** Public par nature : visible dans l URL d autorisation. */
+  meta_app_id?: string | null
+  meta_redirect_uri?: string | null
 }
 
 /**

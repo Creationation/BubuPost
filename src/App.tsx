@@ -8,6 +8,7 @@ import Accounts from './pages/Accounts'
 import Admin from './pages/Admin'
 import Guide from './pages/Guide'
 import TikTokCallback from './pages/TikTokCallback'
+import MetaCallback from './pages/MetaCallback'
 import { Privacy, Terms } from './pages/Legal'
 
 /** Les pages protegees, derriere le login. */
@@ -34,6 +35,7 @@ function Private() {
         <Route path="admin" element={<Admin />} />
       </Route>
       <Route path="auth/tiktok/callback" element={<TikTokCallback />} />
+      <Route path="auth/meta/callback" element={<MetaCallback />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

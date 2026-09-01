@@ -249,40 +249,36 @@ export default function Guide() {
           open={open === 'instagram'}
           onToggle={() => toggle('instagram')}
         >
-          <p className="mb-4 text-sm text-mist-300">
-            La mieux documentee des cinq. Ton compte Instagram doit etre un compte Professionnel et
-            etre relie a une Page Facebook, sinon l'API de publication n'existe pas.
+          <p className="mb-4 rounded-lg border border-ok-600/40 bg-ok-600/10 px-3 py-2 text-xs text-ok-400">
+            Connexion automatisee, comme TikTok : aucun token a copier. Il te faut juste un compte
+            Instagram Professionnel relie a une Page Facebook dont tu es administrateur.
           </p>
           <ol className="space-y-3">
             <Step n={1}>
-              Sur <Ext href="https://developers.facebook.com/apps">developers.facebook.com</Ext>,
-              cree une app de type "Business".
+              Dans l'application Instagram : Parametres, Compte, puis "Passer a un compte
+              professionnel". Sans ca, l'API de publication n'existe tout simplement pas.
             </Step>
             <Step n={2}>
-              Ajoute les produits "Instagram Graph API" et "Facebook Login".
+              Toujours dans Instagram, relie le compte a ta Page Facebook. C'est cette Page qui
+              porte le droit de publier.
             </Step>
             <Step n={3}>
-              Dans{' '}
-              <Ext href="https://developers.facebook.com/tools/explorer">l'explorateur d'API</Ext>,
-              genere un token avec les permissions <Code>instagram_basic</Code>,{' '}
-              <Code>instagram_content_publish</Code>, <Code>pages_show_list</Code>,{' '}
-              <Code>pages_read_engagement</Code>.
+              Onglet Comptes, bouton{' '}
+              <strong className="text-mist-100">Connecter un compte Instagram</strong>. Tu choisis
+              la marque, Facebook te demande d'autoriser, et le compte s'enregistre tout seul.
             </Step>
             <Step n={4}>
-              Ce token ne dure qu'une heure. Echange-le contre un token de 60 jours avec l'URL{' '}
-              <Code>
-                graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=...&client_secret=...&fb_exchange_token=...
-              </Code>
+              Pendant l'autorisation, <strong className="text-mist-100">coche bien la Page</strong>{' '}
+              concernee. Si tu la decoches, Facebook renvoie une liste vide et la connexion echoue
+              sans dire pourquoi.
             </Step>
             <Step n={5}>
-              Recupere ton IG User ID : appelle <Code>me/accounts</Code> pour l'ID de ta Page, puis{' '}
-              <Code>PAGE_ID?fields=instagram_business_account</Code>.
+              Si plusieurs comptes Instagram sont accessibles, l'application te les affiche et te
+              laisse choisir. Rien n'est importe sans ton accord.
             </Step>
             <Step n={6}>
-              Onglet Comptes, "Ajouter un compte". L'IG User ID va dans "Identifiant sur la
-              plateforme", le token de 60 jours dans "Token d'acces". Puis clique sur{' '}
-              <strong className="text-mist-100">Tester la connexion</strong> : si le nom de ton
-              compte s'affiche, c'est bon.
+              Clique ensuite sur <strong className="text-mist-100">Tester la connexion</strong>. Le
+              jeton se renouvelle ensuite tout seul, il expire au bout de 60 jours.
             </Step>
           </ol>
         </Panel>
