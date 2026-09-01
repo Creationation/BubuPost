@@ -28,6 +28,14 @@ export type PlatformAdapter = {
 
   /** Publie le conteneur et renvoie l'identifiant du post cree. */
   publish(account: Account, containerId: string): Promise<string>
+
+  /**
+   * Verifie que le compte est utilisable : token valide, identifiant correct,
+   * droits suffisants. Renvoie le nom du compte vu par la plateforme, ce qui
+   * permet de confirmer qu'on parle bien du bon compte.
+   * Leve une PlatformError avec un message lisible si quelque chose cloche.
+   */
+  verify(account: Account): Promise<string>
 }
 
 /** Erreur metier d'une plateforme, avec l'info « faut-il reessayer ». */

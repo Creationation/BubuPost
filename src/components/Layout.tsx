@@ -5,6 +5,7 @@ const NAV = [
   { to: '/', label: 'Dashboard', icon: '◧', end: true },
   { to: '/posts', label: 'Publications', icon: '▤', end: false },
   { to: '/accounts', label: 'Comptes', icon: '◍', end: false },
+  { to: '/guide', label: 'Guide', icon: '◎', end: false },
   { to: '/admin', label: 'Admin', icon: '⚙', end: false },
 ]
 
@@ -78,7 +79,7 @@ export default function Layout() {
         </footer>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-4 gap-1 border-t border-ink-800 bg-ink-950/95 p-2 backdrop-blur lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 gap-1 border-t border-ink-800 bg-ink-950/95 p-2 backdrop-blur lg:hidden">
         {NAV.map((item) => (
           <NavLink key={item.to} to={item.to} end={item.end} className={navClass}>
             <span className="mx-auto flex flex-col items-center gap-0.5">

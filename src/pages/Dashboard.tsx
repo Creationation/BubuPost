@@ -49,14 +49,9 @@ export default function Dashboard() {
 
   const stats = useMemo(() => {
     const now = Date.now()
-    const in24h = now + 86_400_000
     return {
+      activeAccounts: accounts.filter((a) => a.status === 'active').length,
       pending: posts.filter((p) => p.status === 'pending' || p.status === 'processing').length,
-      next24h: posts.filter(
-        (p) =>
-          (p.status === 'pending' || p.status === 'processing') &&
-          new Date(p.scheduled_at).getTime() <= in24h,
-      ).length,
       failed: posts.filter((p) => p.status === 'failed').length,
       published7d: posts.filter(
         (p) =>
@@ -65,7 +60,7 @@ export default function Dashboard() {
           now - new Date(p.published_at).getTime() < 7 * 86_400_000,
       ).length,
     }
-  }, [posts])
+  }, [posts, accounts])
 
   /** Ce qui demande une action : token bientot mort, ou compte en erreur. */
   const alerts = useMemo(() => {
@@ -126,14 +121,18 @@ export default function Dashboard() {
       )}
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="En attente" value={stats.pending} />
-        <Stat label="Prochaines 24 h" value={stats.next24h} tone="text-idle-400" />
+        <Stat
+          label="Comptes actifs"
+          value={stats.activeAccounts}
+          tone={stats.activeAccounts > 0 ? 'text-mist-100' : 'text-warn-400'}
+        />
+        <Stat label="En attente" value={stats.pending} tone="text-warn-400" />
+        <Stat label="Publiees cette semaine" value={stats.published7d} tone="text-ok-400" />
         <Stat
           label="En erreur"
           value={stats.failed}
           tone={stats.failed > 0 ? 'text-bad-400' : 'text-mist-100'}
         />
-        <Stat label="Publiees sur 7 j" value={stats.published7d} tone="text-ok-400" />
       </div>
 
       {alerts.length > 0 && (

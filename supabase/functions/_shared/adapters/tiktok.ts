@@ -89,4 +89,26 @@ export const tiktok: PlatformAdapter = {
   publish(_account: Account, containerId: string): Promise<string> {
     return Promise.resolve(containerId)
   },
+
+  async verify(account: Account): Promise<string> {
+    const token = requireToken(account)
+
+    const json = await apiFetch(
+      `${API}/user/info/?fields=display_name,username`,
+      { method: 'GET', headers: { Authorization: `Bearer ${token}` } },
+      'TikTok verification du compte',
+    )
+
+    const data = (json.data ?? {}) as Record<string, unknown>
+    const user = (data.user ?? {}) as Record<string, unknown>
+    const name = user.display_name ?? user.username
+
+    if (typeof name !== 'string') {
+      throw new PlatformError(
+        "TikTok repond mais ne donne pas le nom du compte. Le scope user.info.basic n'est peut-etre pas accorde.",
+        { detail: json },
+      )
+    }
+    return String(name)
+  },
 }

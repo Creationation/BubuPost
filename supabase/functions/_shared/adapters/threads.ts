@@ -87,4 +87,23 @@ export const threads: PlatformAdapter = {
     }
     return id
   },
+
+  async verify(account: Account): Promise<string> {
+    const token = requireToken(account)
+    const userId = requireExternalId(account)
+
+    const json = await apiFetch(
+      `${GRAPH}/${userId}?fields=username&access_token=${encodeURIComponent(token)}`,
+      { method: 'GET' },
+      'Threads verification du compte',
+    )
+
+    if (typeof json.username !== 'string') {
+      throw new PlatformError(
+        "Threads repond, mais sans nom de compte. Verifie le Threads User ID, il est different de l'IG User ID.",
+        { detail: json },
+      )
+    }
+    return `@${json.username}`
+  },
 }

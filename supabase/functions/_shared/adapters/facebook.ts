@@ -96,4 +96,23 @@ export const facebook: PlatformAdapter = {
 
     return videoId
   },
+
+  async verify(account: Account): Promise<string> {
+    const token = requireToken(account)
+    const pageId = requireExternalId(account)
+
+    const json = await apiFetch(
+      `${GRAPH}/${pageId}?fields=name,category&access_token=${encodeURIComponent(token)}`,
+      { method: 'GET' },
+      'Facebook verification du compte',
+    )
+
+    if (typeof json.name !== 'string') {
+      throw new PlatformError(
+        "Facebook repond, mais cet identifiant ne correspond pas a une Page. Verifie que tu as bien colle le Page ID.",
+        { detail: json },
+      )
+    }
+    return String(json.name)
+  },
 }

@@ -180,4 +180,26 @@ export const youtube: PlatformAdapter = {
     )
     return containerId
   },
+
+  async verify(account: Account): Promise<string> {
+    // accessToken() teste deja le refresh token, c'est le point le plus fragile.
+    const token = await accessToken(account)
+
+    const json = await apiFetch(
+      'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true',
+      { method: 'GET', headers: { Authorization: `Bearer ${token}` } },
+      'YouTube verification du compte',
+    )
+
+    const items = (json.items ?? []) as Array<Record<string, unknown>>
+    if (items.length === 0) {
+      throw new PlatformError(
+        "Le token YouTube est valide mais aucune chaine n'y est rattachee. Refais l'autorisation en etant connecte au bon compte Google.",
+        { detail: json },
+      )
+    }
+
+    const snippet = (items[0].snippet ?? {}) as Record<string, unknown>
+    return String(snippet.title ?? 'chaine sans nom')
+  },
 }

@@ -216,6 +216,43 @@ export async function saveSetting(key: string, value: unknown): Promise<void> {
   )
 }
 
+export type SetupStatus = { anthropic: boolean; telegram: boolean; google: boolean }
+
+/**
+ * Quelles cles serveur sont en place. Ne renvoie que des booleens, jamais les
+ * valeurs : elles ne doivent pas descendre jusqu'au navigateur.
+ */
+export async function setupStatus(): Promise<SetupStatus> {
+  const { data, error } = await supabase.functions.invoke<SetupStatus>('setup-status', {
+    body: {},
+  })
+  if (error) throw new Error(errorMessage(error))
+  return data ?? { anthropic: false, telegram: false, google: false }
+}
+
+export type AccountCheck = {
+  ok: boolean
+  message: string
+  remote_name?: string
+  technical?: string
+  status_updated?: string
+}
+
+/**
+ * Teste un compte aupres de sa plateforme : token valide, identifiant correct,
+ * droits suffisants. Met aussi le statut du compte a jour.
+ */
+export async function checkAccount(accountId: string): Promise<AccountCheck> {
+  const { data, error } = await supabase.functions.invoke<AccountCheck & { error?: string }>(
+    'check-account',
+    { body: { account_id: accountId } },
+  )
+  if (error) throw new Error(errorMessage(error))
+  if (!data) throw new Error('Reponse vide')
+  if (data.error) throw new Error(data.error)
+  return data
+}
+
 /** Declenche un passage du scheduler tout de suite, sans attendre le cron. */
 export async function runSchedulerNow(): Promise<unknown> {
   const { data, error } = await supabase.functions.invoke('scheduler', { body: {} })

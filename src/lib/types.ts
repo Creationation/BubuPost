@@ -54,8 +54,8 @@ export const POST_STATUS_ICON: Record<string, string> = {
 
 /** Classes Tailwind de la pastille de statut, une par statut de post. */
 export const POST_STATUS_CLASS: Record<string, string> = {
-  pending: 'bg-idle-400/10 text-idle-400 border-idle-400/30',
-  processing: 'bg-warn-400/10 text-warn-400 border-warn-400/30',
+  pending: 'bg-warn-400/10 text-warn-400 border-warn-400/30',
+  processing: 'bg-idle-400/10 text-idle-400 border-idle-400/30',
   published: 'bg-ok-400/10 text-ok-400 border-ok-400/30',
   failed: 'bg-bad-400/10 text-bad-400 border-bad-400/30',
   cancelled: 'bg-mist-500/10 text-mist-500 border-mist-500/30',

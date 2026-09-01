@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
+  checkAccount,
   createAccount,
   deleteAccount,
   listAccounts,
   updateAccount,
+  type AccountCheck,
   type AccountInput,
 } from '../lib/api'
 import { friendlyError } from '../lib/errors'
@@ -54,6 +56,10 @@ export default function Accounts() {
   const [creating, setCreating] = useState(false)
   const [toDelete, setToDelete] = useState<Account | null>(null)
 
+  // Resultat du dernier test de connexion, par compte.
+  const [checks, setChecks] = useState<Record<string, AccountCheck>>({})
+  const [testing, setTesting] = useState<string | null>(null)
+
   const reload = useCallback(async () => {
     setLoading(true)
     try {
@@ -77,6 +83,22 @@ export default function Accounts() {
       await reload()
     } catch (err) {
       setError(friendlyError(err))
+    }
+  }
+
+  /** Interroge la plateforme pour savoir si le compte est reellement utilisable. */
+  async function testAccount(account: Account) {
+    setTesting(account.id)
+    setError(null)
+    try {
+      const result = await checkAccount(account.id)
+      setChecks((c) => ({ ...c, [account.id]: result }))
+      // Le test met le statut a jour cote base, on rafraichit pour le voir.
+      await reload()
+    } catch (err) {
+      setChecks((c) => ({ ...c, [account.id]: { ok: false, message: friendlyError(err) } }))
+    } finally {
+      setTesting(null)
     }
   }
 
@@ -149,11 +171,27 @@ export default function Accounts() {
                         </p>
                       )}
 
-                      <div className="mt-4 flex gap-2">
+                      {checks[account.id] && (
+                        <p
+                          className={`mt-3 rounded-lg border px-2.5 py-2 text-xs ${
+                            checks[account.id].ok
+                              ? 'border-ok-600/40 bg-ok-600/10 text-ok-400'
+                              : 'border-bad-600/40 bg-bad-600/10 text-bad-400'
+                          }`}
+                        >
+                          {checks[account.id].message}
+                        </p>
+                      )}
+
+                      <div className="mt-4 flex flex-wrap gap-2">
                         <button
                           className="btn btn-ghost flex-1"
-                          onClick={() => setEditing(account)}
+                          onClick={() => void testAccount(account)}
+                          disabled={testing === account.id}
                         >
+                          {testing === account.id ? 'Test...' : 'Tester la connexion'}
+                        </button>
+                        <button className="btn btn-ghost" onClick={() => setEditing(account)}>
                           Modifier
                         </button>
                         <button className="btn btn-danger" onClick={() => setToDelete(account)}>
@@ -210,10 +248,12 @@ function AccountForm({
   const [form, setForm] = useState<AccountInput>(EMPTY)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showToken, setShowToken] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setError(null)
+    setShowToken(false)
     setForm(
       account
         ? {
@@ -356,17 +396,31 @@ function AccountForm({
         </div>
 
         <div>
-          <label className="label" htmlFor="access_token">
-            Token d'acces
-          </label>
-          <textarea
+          <div className="flex items-baseline justify-between">
+            <label className="label" htmlFor="access_token">
+              Token d'acces
+            </label>
+            <button
+              type="button"
+              className="mb-1.5 text-xs text-mist-500 hover:text-mist-300"
+              onClick={() => setShowToken((v) => !v)}
+            >
+              {showToken ? 'Masquer' : 'Afficher'}
+            </button>
+          </div>
+          <input
             id="access_token"
+            type={showToken ? 'text' : 'password'}
             className="field font-mono text-xs"
-            rows={3}
             value={form.access_token ?? ''}
             onChange={(e) => set('access_token', e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
             placeholder="EAAG..."
           />
+          <p className="mt-1 text-xs text-mist-600">
+            Masque par defaut. Colle-le tel quel, l'app retire les espaces autour toute seule.
+          </p>
         </div>
 
         {needsRefreshToken && (
@@ -374,12 +428,14 @@ function AccountForm({
             <label className="label" htmlFor="refresh_token">
               Refresh token
             </label>
-            <textarea
+            <input
               id="refresh_token"
+              type={showToken ? 'text' : 'password'}
               className="field font-mono text-xs"
-              rows={2}
               value={form.refresh_token ?? ''}
               onChange={(e) => set('refresh_token', e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
               placeholder="1//0g..."
             />
             <p className="mt-1 text-xs text-mist-600">

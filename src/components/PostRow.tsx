@@ -58,6 +58,21 @@ export function PostRow({
             </p>
           )}
 
+          <p className="mt-2 text-xs">
+            <a
+              href={post.video_url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-mist-500 hover:text-brand-400"
+              title={post.video_url}
+            >
+              <span className="opacity-70">▷</span>
+              <span className="max-w-[22rem] truncate align-middle">
+                {post.video_url.split('/').pop() || post.video_url}
+              </span>
+            </a>
+          </p>
+
           <p className="mt-2 text-xs text-mist-500">
             {post.status === 'published' && post.published_at
               ? `Publie ${relative(post.published_at)}, le ${formatDateTime(post.published_at)}`

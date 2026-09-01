@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import Posts from './pages/Posts'
 import Accounts from './pages/Accounts'
 import Admin from './pages/Admin'
+import Guide from './pages/Guide'
 import { Privacy, Terms } from './pages/Legal'
 
 /** Les pages protegees, derriere le login. */
@@ -28,6 +29,7 @@ function Private() {
         <Route index element={<Dashboard />} />
         <Route path="posts" element={<Posts />} />
         <Route path="accounts" element={<Accounts />} />
+        <Route path="guide" element={<Guide />} />
         <Route path="admin" element={<Admin />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

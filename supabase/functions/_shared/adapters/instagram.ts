@@ -85,4 +85,23 @@ export const instagram: PlatformAdapter = {
     }
     return id
   },
+
+  async verify(account: Account): Promise<string> {
+    const token = requireToken(account)
+    const igUserId = requireExternalId(account)
+
+    const json = await apiFetch(
+      `${GRAPH}/${igUserId}?fields=username,account_type&access_token=${encodeURIComponent(token)}`,
+      { method: 'GET' },
+      'Instagram verification du compte',
+    )
+
+    if (typeof json.username !== 'string') {
+      throw new PlatformError(
+        "Instagram repond, mais cet identifiant n'est pas un compte Instagram professionnel. Verifie que tu as bien colle l'IG User ID, et pas l'ID de la Page Facebook.",
+        { detail: json },
+      )
+    }
+    return `@${json.username}`
+  },
 }
