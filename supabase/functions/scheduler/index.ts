@@ -181,15 +181,21 @@ async function processPost(
 
   const adapter = adapterFor(account.platform)
 
+  // Marquer la prise en charge AVANT le moindre appel externe. La creation du
+  // conteneur et l'envoi de la video prennent parfois une minute : sans ce
+  // marquage, l'interface continuerait d'afficher un compte a rebours alors
+  // que le travail a deja commence.
+  if (post.status !== 'processing') {
+    await db.from('posts').update({ status: 'processing' }).eq('id', post.id)
+    await log(db, post.id, 'processing_started', { platform: account.platform })
+  }
+
   try {
     // 1. Creer le conteneur, sauf s'il existe deja d'un passage precedent.
     let containerId = post.container_id
     if (!containerId) {
       containerId = await adapter.createContainer(account, post.video_url, buildCaption(post))
-      await db
-        .from('posts')
-        .update({ status: 'processing', container_id: containerId })
-        .eq('id', post.id)
+      await db.from('posts').update({ container_id: containerId }).eq('id', post.id)
       await log(db, post.id, 'container_created', { container_id: containerId })
     }
 
@@ -266,6 +272,15 @@ Deno.serve(async (req) => {
   const settings = await loadSettings(db)
   const now = new Date().toISOString()
 
+  // Trace du passage, ouverte des maintenant : c'est elle qui permet a
+  // l'interface de savoir quand tombera reellement le prochain, au lieu de le
+  // supposer a partir du cycle theorique.
+  const { data: passage } = await db
+    .from('scheduler_runs')
+    .insert({ started_at: now })
+    .select('id')
+    .single()
+
   const { data: posts, error } = await db
     .from('posts')
     .select('*, accounts(*)')
@@ -288,6 +303,20 @@ Deno.serve(async (req) => {
     }
     const outcome = await processPost(db, post, settings)
     results.push({ post: post.id, outcome })
+  }
+
+  if (passage?.id) {
+    await db
+      .from('scheduler_runs')
+      .update({ finished_at: new Date().toISOString(), processed: results.length })
+      .eq('id', passage.id)
+
+    // Un passage toutes les 5 minutes fait environ 105 000 lignes par an.
+    // On garde une semaine, largement de quoi diagnostiquer un trou.
+    await db
+      .from('scheduler_runs')
+      .delete()
+      .lt('started_at', new Date(Date.now() - 7 * 86_400_000).toISOString())
   }
 
   return json({ ran_at: now, processed: results.length, results })

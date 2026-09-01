@@ -56,16 +56,33 @@ export function formatDuree(secondes: number): string {
   return `${jours} j ${heures % 24} h`
 }
 
+/** Le cron tourne toutes les 5 minutes. */
+const CYCLE_S = 300
+
 /**
- * Secondes avant le prochain passage du scheduler.
- * Le cron tourne toutes les 5 minutes, aux minutes multiples de 5, donc
- * l'echeance est calculable sans rien demander au serveur.
+ * Secondes avant le prochain passage du scheduler, a partir du dernier passage
+ * reellement enregistre en base.
+ *
+ * On ne suppose plus un alignement sur les minutes multiples de 5 : pg_cron
+ * declenche a la minute, puis l'appel HTTP et le demarrage de la fonction
+ * ajoutent leur delai. Le compte a rebours theorique affichait donc des valeurs
+ * decalees, du genre 4 min 30 la ou on attendait 5 min.
+ *
+ * Renvoie null tant que le dernier passage est inconnu : mieux vaut ne pas
+ * afficher de chiffre que d'en afficher un faux.
  */
-export function secondesAvantPassage(maintenantMs: number): number {
-  const d = new Date(maintenantMs)
-  const prochaine = new Date(d)
-  prochaine.setMinutes(Math.floor(d.getMinutes() / 5) * 5 + 5, 0, 0)
-  return Math.max(0, Math.round((prochaine.getTime() - maintenantMs) / 1000))
+export function secondesAvantPassage(
+  maintenantMs: number,
+  dernierPassageMs: number | null,
+): number | null {
+  if (!dernierPassageMs) return null
+
+  const ecoule = (maintenantMs - dernierPassageMs) / 1000
+
+  // Passage manque ou horloges decalees : on ne bricole pas un chiffre.
+  if (ecoule < 0 || ecoule > CYCLE_S * 3) return null
+
+  return Math.max(0, Math.round(CYCLE_S - ecoule))
 }
 
 export type PhaseAttente = 'lointain' | 'proche' | 'file' | 'traitement' | 'aucune'
@@ -91,11 +108,14 @@ export function decrireAttente(
   scheduledAt: string,
   status: string,
   maintenantMs: number,
+  dernierPassageMs: number | null = null,
 ): EtatAttente {
+  // Le scheduler a pris la publication en charge : plus aucun compte a
+  // rebours, le travail a commence.
   if (status === 'processing') {
     return {
       phase: 'traitement',
-      label: 'Envoi vers la plateforme en cours...',
+      label: 'Publication en cours...',
       vivant: true,
       restant: 0,
     }
@@ -125,14 +145,25 @@ export function decrireAttente(
     }
   }
 
-  // L'heure est passee : c'est le prochain passage du scheduler qui decide.
-  const avant = secondesAvantPassage(maintenantMs)
+  // L'heure est passee, le scheduler n'est pas encore venu : on annonce son
+  // prochain passage reel, ou rien du tout si on ne le connait pas.
+  const avant = secondesAvantPassage(maintenantMs, dernierPassageMs)
+
+  if (avant === null) {
+    return {
+      phase: 'file',
+      label: 'En attente du prochain passage du scheduler',
+      vivant: true,
+      restant,
+    }
+  }
+
   return {
     phase: 'file',
     label:
-      avant <= 20
-        ? "En file d'attente, traitement imminent..."
-        : `En file d'attente, prochain passage dans ${formatDuree(avant)}`,
+      avant <= 15
+        ? 'En attente du prochain passage, imminent...'
+        : `En attente du prochain passage, dans ${formatDuree(avant)}`,
     vivant: true,
     restant,
   }

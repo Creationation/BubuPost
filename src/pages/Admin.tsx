@@ -18,6 +18,7 @@ import {
   type Profile,
 } from '../lib/types'
 import { formatDateTime } from '../lib/format'
+import { rafraichirPassage } from '../lib/scheduler'
 import { Alert, Loading, PageHeader } from '../components/ui'
 
 const DAYS = [
@@ -114,6 +115,8 @@ export default function Admin() {
     setError(null)
     try {
       const result = (await runSchedulerNow()) as { processed?: number }
+      // Le compte a rebours des publications se recale sur ce passage.
+      rafraichirPassage()
       setNotice(`Scheduler lance, ${result?.processed ?? 0} publication(s) traitee(s)`)
       await reload()
     } catch (err) {

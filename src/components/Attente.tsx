@@ -1,4 +1,5 @@
 import { decrireAttente, useSeconde } from '../lib/countdown'
+import { useDernierPassage } from '../lib/scheduler'
 import { POST_STATUS_CLASS, POST_STATUS_ICON, POST_STATUS_LABEL } from '../lib/types'
 import { Chip } from './ui'
 
@@ -16,7 +17,8 @@ export function BadgeStatut({
   scheduledAt: string
 }) {
   const seconde = useSeconde()
-  const etat = decrireAttente(scheduledAt, status, seconde * 1000)
+  const dernierPassage = useDernierPassage()
+  const etat = decrireAttente(scheduledAt, status, seconde * 1000, dernierPassage)
   const classe = POST_STATUS_CLASS[status]
 
   if (status === 'processing') {
@@ -57,7 +59,8 @@ export function LigneAttente({
   className?: string
 }) {
   const seconde = useSeconde()
-  const etat = decrireAttente(scheduledAt, status, seconde * 1000)
+  const dernierPassage = useDernierPassage()
+  const etat = decrireAttente(scheduledAt, status, seconde * 1000, dernierPassage)
 
   if (etat.phase === 'aucune') return null
 
@@ -94,6 +97,7 @@ export function ProchainePublication({
   posts: Array<{ id: string; status: string; scheduled_at: string; accounts: { account_name: string } | null }>
 }) {
   const seconde = useSeconde()
+  const dernierPassage = useDernierPassage()
   const maintenant = seconde * 1000
 
   const suivante = posts
@@ -102,7 +106,7 @@ export function ProchainePublication({
 
   if (!suivante) return null
 
-  const etat = decrireAttente(suivante.scheduled_at, suivante.status, maintenant)
+  const etat = decrireAttente(suivante.scheduled_at, suivante.status, maintenant, dernierPassage)
   if (etat.phase === 'aucune') return null
 
   return (

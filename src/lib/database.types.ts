@@ -24,6 +24,7 @@ export type Database = {
           id: string
           platform: string
           refresh_token: string | null
+          scope: string | null
           status: string
           token_expiry: string | null
           updated_at: string
@@ -37,6 +38,7 @@ export type Database = {
           id?: string
           platform: string
           refresh_token?: string | null
+          scope?: string | null
           status?: string
           token_expiry?: string | null
           updated_at?: string
@@ -50,6 +52,7 @@ export type Database = {
           id?: string
           platform?: string
           refresh_token?: string | null
+          scope?: string | null
           status?: string
           token_expiry?: string | null
           updated_at?: string
@@ -199,6 +202,27 @@ export type Database = {
           },
         ]
       }
+      scheduler_runs: {
+        Row: {
+          finished_at: string | null
+          id: string
+          processed: number
+          started_at: string
+        }
+        Insert: {
+          finished_at?: string | null
+          id?: string
+          processed?: number
+          started_at?: string
+        }
+        Update: {
+          finished_at?: string | null
+          id?: string
+          processed?: number
+          started_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       account_usage_24h: {
@@ -217,6 +241,7 @@ export type Database = {
     Functions: {
       is_admin: { Args: never; Returns: boolean }
       run_scheduler: { Args: never; Returns: undefined }
+      run_tiktok_refresh: { Args: never; Returns: undefined }
     }
     Enums: {
       [_ in never]: never
