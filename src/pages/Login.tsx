@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { friendlyError } from '../lib/errors'
+
+const CONTACT = 'renardiego@gmail.com'
 
 export default function Login() {
   const { signIn } = useAuth()
@@ -72,9 +75,47 @@ export default function Login() {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-xs text-mist-600">
-          Acces reserve. Les comptes sont crees depuis Supabase.
-        </p>
+        {/* Ce bloc doit rester visible sans connexion : c'est par la que les
+            equipes de validation de TikTok et de Meta accedent aux mentions
+            legales, et elles n'ont pas de compte pour aller plus loin. */}
+        <div className="mt-8 space-y-4 border-t border-ink-800 pt-6 text-center">
+          <p className="text-xs leading-relaxed text-mist-500">
+            BubuPost est un outil prive de planification et de publication de videos courtes sur
+            les comptes de reseaux sociaux de son proprietaire. L'acces est reserve, il n'y a pas
+            d'inscription ouverte au public.
+          </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs">
+            <Link
+              to="/terms"
+              className="rounded-lg border border-ink-700 px-3 py-1.5 font-medium text-mist-300 transition-colors hover:border-brand-500/50 hover:text-mist-100"
+            >
+              Terms of Service
+            </Link>
+            <Link
+              to="/privacy"
+              className="rounded-lg border border-ink-700 px-3 py-1.5 font-medium text-mist-300 transition-colors hover:border-brand-500/50 hover:text-mist-100"
+            >
+              Privacy Policy
+            </Link>
+            <a
+              href={`mailto:${CONTACT}`}
+              className="rounded-lg border border-ink-700 px-3 py-1.5 font-medium text-mist-300 transition-colors hover:border-brand-500/50 hover:text-mist-100"
+            >
+              Contact
+            </a>
+          </div>
+
+          <p className="text-xs text-mist-600">
+            Plateformes prises en charge : Instagram, Facebook, Threads, YouTube, TikTok.
+          </p>
+          <p className="text-xs text-mist-600">
+            Une question ou une demande de suppression de donnees :{' '}
+            <a className="text-brand-400 hover:underline" href={`mailto:${CONTACT}`}>
+              {CONTACT}
+            </a>
+          </p>
+        </div>
       </div>
     </div>
   )
