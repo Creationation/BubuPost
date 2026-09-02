@@ -124,6 +124,16 @@ export const facebook: PlatformAdapter = {
     return `${videoId}${SEP}${caption}`
   },
 
+  /**
+   * Ici « pret » veut dire « pret a etre finalise », pas « encode ».
+   *
+   * Facebook ne demarre l'encodage qu'apres l'appel de finalisation. Attendre
+   * processing_phase a complete avant de finaliser bloque des deux cotes :
+   * l'application attend Facebook, qui attend l'application. La video reste
+   * indefiniment en upload_complete, processing_phase not_started.
+   *
+   * Le seul signal qui compte a cette etape est donc la fin du televersement.
+   */
   async checkStatus(account: Account, containerId: string): Promise<MediaStatus> {
     const token = requireToken(account)
     const sep = containerId.indexOf(SEP)
@@ -136,15 +146,27 @@ export const facebook: PlatformAdapter = {
     )
 
     const status = (json.status ?? {}) as Record<string, unknown>
-    const phase = String(status.video_status ?? status.processing_phase ?? '').toLowerCase()
+    const televersement = (status.uploading_phase ?? {}) as Record<string, unknown>
+    const global = String(status.video_status ?? '').toLowerCase()
+    const phaseUpload = String(televersement.status ?? '').toLowerCase()
 
-    if (phase === 'ready' || phase === 'complete' || phase === 'published') return 'ready'
-    if (phase === 'error' || phase === 'failed') {
+    if (phaseUpload === 'error' || global === 'error') {
       throw new PlatformError(
-        `Facebook a rejete la video : ${status.error ?? 'raison inconnue'}`,
+        `Facebook a rejete la video : ${televersement.error ?? status.error ?? 'raison inconnue'}`,
         { detail: json },
       )
     }
+
+    // upload_complete, ou la phase de televersement terminee : on peut finaliser.
+    if (
+      phaseUpload === 'complete' ||
+      global === 'upload_complete' ||
+      global === 'ready' ||
+      global === 'published'
+    ) {
+      return 'ready'
+    }
+
     return 'processing'
   },
 
