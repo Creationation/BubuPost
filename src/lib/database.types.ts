@@ -77,6 +77,27 @@ export type Database = {
         }
         Relationships: []
       }
+      consignes: {
+        Row: {
+          cle: string
+          portee: string
+          reglages: Json
+          updated_at: string
+        }
+        Insert: {
+          cle: string
+          portee: string
+          reglages?: Json
+          updated_at?: string
+        }
+        Update: {
+          cle?: string
+          portee?: string
+          reglages?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       posts: {
         Row: {
           account_id: string

@@ -183,6 +183,9 @@ export default function PostComposer({
         targets: selected.map((id) => ({
           id,
           platform: accountById[id]?.platform ?? 'instagram',
+          // La marque voyage avec chaque cible : une campagne peut viser deux
+          // marques, et leurs consignes ne sont pas les memes.
+          brand: accountById[id]?.brand,
           account_name: accountById[id]?.account_name,
           youtube_type: targets[id]?.youtubeType,
         })),
@@ -192,7 +195,14 @@ export default function PostComposer({
         const next = { ...prev }
         for (const r of results) {
           if (!next[r.id] || !r.caption) continue
-          next[r.id] = { ...next[r.id], caption: r.caption, hashtags: r.hashtags.join(' ') }
+          next[r.id] = {
+            ...next[r.id],
+            caption: r.caption,
+            hashtags: r.hashtags.join(' '),
+            // Le titre d'une video YouTube classique arrive dans le meme lot :
+            // il se perdait ici, et il fallait le regenerer ligne par ligne.
+            titre: r.title ?? next[r.id].titre,
+          }
         }
         return next
       })

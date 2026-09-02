@@ -4,42 +4,39 @@
 // variantes en UN SEUL appel. C'est a la fois moins cher en tokens et
 // meilleur, parce que le modele voit les autres textes pendant qu'il ecrit et
 // peut vraiment les differencier, au lieu de produire n fois la meme idee.
+//
+// Les consignes ne sont plus dans ce fichier : elles viennent de la table
+// consignes, une ligne par plateforme et une par marque, editables depuis
+// l'application.
 import Anthropic from 'npm:@anthropic-ai/sdk@0.122.0'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders, json } from '../_shared/cors.ts'
+import {
+  ARBITRAGE,
+  blocPour,
+  doublons,
+  ressembleAJson,
+  texteBloc,
+  texteMarque,
+  verifier,
+  type Bloc,
+  type ConsigneMarque,
+  type ConsignePlateforme,
+  type Probleme,
+} from '../_shared/consignes.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
 const MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-opus-5'
 
-const PLATFORM_BRIEF: Record<string, string> = {
-  instagram:
-    "Instagram Reels. Ton visuel, on decrit ce qu'on voit autant que ce qu'on dit. Deux a quatre lignes, une accroche forte des le premier mot. 5 a 8 hashtags.",
-  facebook:
-    'Facebook Reels. Plus narratif, on raconte, on prend le temps de poser le contexte. Trois a cinq lignes, phrases completes. 0 a 3 hashtags seulement.',
-  threads:
-    'Threads. Ton conversationnel, comme un message a des gens qui suivent deja. Une a trois lignes, 0 a 2 hashtags.',
-  youtube:
-    'YouTube Shorts. La premiere ligne sert de titre et doit faire moins de 100 caracteres. Ensuite deux a quatre lignes de description. 3 a 5 hashtags.',
-  youtube_video:
-    "YouTube, video classique au format long. Exercice different d'une legende : le titre doit etre optimise pour la RECHERCHE YouTube, donc contenir les mots que les gens tapent reellement, sans point d'exclamation ni majuscules inutiles, 60 a 70 caracteres pour ne pas etre tronque. La description est structuree : deux ou trois phrases qui donnent envie et reprennent les mots-cles des les premieres lignes, puis un court sommaire de ce que la video couvre. 5 a 8 tags.",
-  tiktok:
-    'TikTok. Tres court, une a deux lignes, accrocheur des le premier mot, ton natif de la plateforme. 3 a 5 hashtags courts.',
-}
-
-const REGLES = `Regles absolues :
+const REGLES_FIXES = `Regles absolues, quelles que soient les consignes :
 - Ecris dans la langue demandee, jamais une autre.
-- N'utilise JAMAIS de tiret cadratin (—) ni de tiret demi-cadratin (–). Utilise une virgule, un point, deux points ou des parentheses.
-- Pas de guillemets autour de la legende, pas de preambule, pas de commentaire sur ton travail.
-- Les hashtags sont renvoyes a part, jamais dans le texte de la legende.
+- Pas de guillemets autour du texte, pas de preambule, pas de commentaire sur ton travail.
 - Reste concret et specifique au sujet fourni. Pas de formule creuse ni de promesse vague.`
 
-const SYSTEM_SIMPLE = `Tu ecris des legendes pour des videos courtes publiees sur les reseaux sociaux.
-
-${REGLES}
-
-Tu reponds uniquement par un objet JSON valide, sans bloc de code autour, de la forme :
+const FORMAT_SIMPLE = `Tu reponds uniquement par un objet JSON valide, sans bloc de code autour, de la forme :
 {"caption": "le texte", "hashtags": ["motcle"], "title": "titre ou chaine vide"}
 
 Le champ title n'est rempli QUE pour une video YouTube classique. Dans ce cas il porte le titre
@@ -48,11 +45,14 @@ Partout ailleurs, title vaut une chaine vide.
 
 Les hashtags sont donnes sans le caractere #.`
 
-const SYSTEM_LOT = `Tu ecris des legendes pour une meme video, publiee sur plusieurs comptes de reseaux sociaux.
+const FORMAT_LOT = `Tu reponds uniquement par un tableau JSON valide, sans bloc de code autour, de la forme :
+[{"id": "identifiant fourni", "caption": "le texte", "hashtags": ["motcle"], "title": "titre ou chaine vide"}]
+Le champ title n'est rempli QUE pour une video YouTube classique, ou caption ne contient alors
+que la description, sans repeter le titre. Vide partout ailleurs.
+Un objet par cible demandee, dans le meme ordre, avec l'identifiant exactement tel qu'il est
+fourni. Les hashtags sont donnes sans le caractere #.`
 
-${REGLES}
-
-EXIGENCE CENTRALE : les textes doivent etre REELLEMENT DIFFERENTS les uns des autres.
+const DIFFERENCIATION = `EXIGENCE CENTRALE : les textes doivent etre REELLEMENT DIFFERENTS les uns des autres.
 Pas des reformulations, pas des synonymes echanges, pas la meme phrase avec un mot en plus.
 Chaque texte doit prendre un ANGLE different sur le meme sujet : l'un pose une question, l'autre
 raconte une situation, l'autre donne un chiffre, l'autre s'adresse directement au lecteur, l'autre
@@ -60,20 +60,19 @@ part d'une erreur courante. Change aussi la structure : longueur, rythme, presen
 appel a l'action. Deux textes qui se ressemblent seraient reperes comme du contenu duplique, ce
 qui est exactement ce qu'on veut eviter.
 
-Varie egalement les hashtags d'un texte a l'autre, tout en restant pertinent.
-
-Tu reponds uniquement par un tableau JSON valide, sans bloc de code autour, de la forme :
-[{"id": "identifiant fourni", "caption": "le texte", "hashtags": ["motcle"], "title": "titre ou chaine vide"}]
-Le champ title n'est rempli QUE pour une video YouTube classique, ou caption ne contient alors
-que la description, sans repeter le titre. Vide partout ailleurs.
-Un objet par cible demandee, dans le meme ordre, avec l'identifiant exactement tel qu'il est
-fourni. Les hashtags sont donnes sans le caractere #.`
+Varie egalement les hashtags d'un texte a l'autre, tout en restant pertinent.`
 
 type Cible = {
   id: string
   platform: string
+  brand?: string
   account_name?: string
   youtube_type?: 'short' | 'video'
+  /**
+   * Texte deja en place, quand on reecrit une publication existante.
+   * Evite de redemander le sujet de la video : le texte actuel le porte deja.
+   */
+  existant?: string
 }
 
 type Body = {
@@ -95,13 +94,6 @@ type Body = {
  * hashtags. On en tirait le tableau ["a"], donc un objet sans champ caption,
  * et le repli renvoyait le JSON entier comme legende.
  */
-/** Le brief a suivre : un Short et une video longue n ont rien a voir. */
-function brief(platform: string, youtubeType?: string): string {
-  const p = (platform ?? '').toLowerCase()
-  if (p === 'youtube' && youtubeType === 'video') return PLATFORM_BRIEF.youtube_video
-  return PLATFORM_BRIEF[p] ?? PLATFORM_BRIEF.instagram
-}
-
 function extraireJson(texte: string, forme: 'objet' | 'tableau'): unknown {
   const [ouvre, ferme] = forme === 'tableau' ? ['[', ']'] : ['{', '}']
 
@@ -116,30 +108,148 @@ function extraireJson(texte: string, forme: 'objet' | 'tableau'): unknown {
   }
 }
 
-/**
- * Une legende ne doit jamais ressembler a du JSON.
- * Mieux vaut ne rien renvoyer que publier une structure technique sur le
- * compte de quelqu'un.
- */
-function ressembleAJson(texte: string): boolean {
-  const t = texte.trim()
-  return (
-    t.startsWith('{') ||
-    t.startsWith('[') ||
-    t.includes('"caption"') ||
-    t.includes('"hashtags"')
-  )
-}
-
-/** Diego ne veut aucun tiret cadratin : ceinture et bretelles apres le modele. */
 function nettoyer(texte: string): string {
-  return String(texte ?? '').replace(/[—–]/g, ',').trim()
+  return String(texte ?? '').trim()
 }
 
 function normaliserHashtags(valeur: unknown): string[] {
   if (!Array.isArray(valeur)) return []
   return valeur.map((h) => String(h).replace(/^#/, '').trim()).filter(Boolean)
 }
+
+// ---------------------------------------------------------------------------
+// Lecture des consignes
+// ---------------------------------------------------------------------------
+
+type Consignes = {
+  plateformes: Map<string, ConsignePlateforme>
+  marques: Map<string, ConsigneMarque>
+}
+
+async function lireConsignes(): Promise<Consignes> {
+  const db = createClient(SUPABASE_URL, SERVICE_KEY)
+  const { data, error } = await db.from('consignes').select('portee, cle, reglages')
+
+  const plateformes = new Map<string, ConsignePlateforme>()
+  const marques = new Map<string, ConsigneMarque>()
+
+  if (error) {
+    // Une consigne absente degrade la qualite du texte, elle ne doit pas
+    // empecher de generer : on repart sur les regles fixes seules.
+    console.error('Consignes illisibles, generation sans elles', error.message)
+    return { plateformes, marques }
+  }
+
+  for (const ligne of data ?? []) {
+    if (ligne.portee === 'plateforme') {
+      plateformes.set(ligne.cle, ligne.reglages as ConsignePlateforme)
+    } else if (ligne.portee === 'marque') {
+      marques.set(ligne.cle, ligne.reglages as ConsigneMarque)
+    }
+  }
+
+  return { plateformes, marques }
+}
+
+/** Quel jeu de regles YouTube s'applique : titre ou description, Short ou long. */
+function varianteYoutube(
+  platform: string,
+  youtubeType: string | undefined,
+  champ: 'titre' | 'description',
+): string | undefined {
+  if (platform !== 'youtube') return undefined
+  return `${youtubeType === 'video' ? 'video' : 'short'}_${champ}`
+}
+
+/** Le bloc qui gouverne le texte principal d'une cible. */
+function blocTexte(consignes: Consignes, platform: string, youtubeType?: string): Bloc | null {
+  const p = consignes.plateformes.get(platform) ?? null
+  return blocPour(p, varianteYoutube(platform, youtubeType, 'description'))
+}
+
+/** Le bloc du titre, qui n'existe que pour une video YouTube classique. */
+function blocTitre(consignes: Consignes, platform: string, youtubeType?: string): Bloc | null {
+  if (platform !== 'youtube' || youtubeType !== 'video') return null
+  const p = consignes.plateformes.get(platform) ?? null
+  return blocPour(p, varianteYoutube(platform, youtubeType, 'titre'))
+}
+
+/**
+ * Une cible, dans le prompt.
+ *
+ * Les regles de plateforme et de marque sont enoncees une seule fois chacune,
+ * en tete, et chaque cible s'y refere par son nom. Avec onze comptes sur trois
+ * marques et cinq plateformes, tout repeter multiplierait le prompt sans rien
+ * apporter au modele.
+ */
+function referenceCible(c: Cible, i: number): string {
+  const nom = c.account_name ? ` (compte ${c.account_name})` : ''
+  const marque = c.brand ? `, marque ${c.brand}` : ''
+  const existant = c.existant?.trim()
+    ? `
+   Texte actuel a reecrire : ${c.existant.trim().replace(/\s+/g, ' ').slice(0, 400)}`
+    : ''
+  const variante =
+    c.platform === 'youtube'
+      ? c.youtube_type === 'video'
+        ? ' en video classique, avec un titre distinct de la description'
+        : ' en Short'
+      : ''
+  return `${i + 1}. id="${c.id}"${nom} : plateforme ${c.platform}${variante}${marque}.${existant}`
+}
+
+type Variante = {
+  id: string
+  caption: string
+  hashtags: string[]
+  title: string | null
+  problemes: Probleme[]
+}
+
+/** Passe chaque variante aux controles, y compris ceux du titre YouTube. */
+function controler(variantes: Variante[], cibles: Cible[], consignes: Consignes): Variante[] {
+  const parId = new Map(cibles.map((c) => [c.id, c]))
+
+  const controlees = variantes.map((v) => {
+    const cible = parId.get(v.id)
+    const marque = cible?.brand ? (consignes.marques.get(cible.brand) ?? null) : null
+    const bloc = cible ? blocTexte(consignes, cible.platform, cible.youtube_type) : null
+
+    const problemes = verifier(v.caption, v.hashtags, bloc, marque)
+
+    // Le titre d'une video YouTube longue a ses propres regles, notamment une
+    // fourchette de longueur etroite pour ne pas etre tronque en resultat.
+    const titre = cible ? blocTitre(consignes, cible.platform, cible.youtube_type) : null
+    if (titre) {
+      if (!v.title) {
+        problemes.push({ code: 'titre-manquant', message: 'le titre de la video est absent' })
+      } else {
+        for (const p of verifier(v.title, [], titre, marque, { mentionObligatoire: false })) {
+          problemes.push({ code: `titre-${p.code}`, message: `titre : ${p.message}` })
+        }
+      }
+    }
+
+    return { ...v, problemes }
+  })
+
+  // La similarite se juge entre variantes, pas variante par variante.
+  for (const paire of doublons(controlees.map((v) => ({ id: v.id, caption: v.caption })))) {
+    for (const id of [paire.a, paire.b]) {
+      const v = controlees.find((x) => x.id === id)
+      const autre = id === paire.a ? paire.b : paire.a
+      const nom = parId.get(autre)?.account_name ?? autre
+      v?.problemes.push({
+        code: 'trop-semblable',
+        message: `trop proche du texte de ${nom} (${Math.round(paire.score * 100)} % de tournures communes)`,
+      })
+    }
+  }
+
+  return controlees
+}
+
+// ---------------------------------------------------------------------------
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -162,11 +272,11 @@ Deno.serve(async (req) => {
   }
 
   const subject = (body.subject ?? '').trim()
-  if (!subject) return json({ error: 'Le sujet est obligatoire' }, 400)
 
   const language = body.language ?? 'francais'
-  const brand = body.brand ?? ''
-  const tone = body.tone ?? 'direct et concret'
+  const tone = body.tone ?? ''
+  const brandGlobale = body.brand ?? ''
+
   const cibles = Array.isArray(body.targets) ? body.targets.filter((t) => t?.id) : []
   const enLot = cibles.length > 0
 
@@ -174,46 +284,125 @@ Deno.serve(async (req) => {
     return json({ error: 'Trop de comptes en une fois, 20 au maximum' }, 400)
   }
 
+  // Le mode simple est ramene a une cible unique : un seul chemin de code pour
+  // les consignes, les controles et la relance.
+  const toutes: Cible[] = enLot
+    ? cibles.map((c) => ({ ...c, brand: c.brand || brandGlobale }))
+    : [
+        {
+          id: 'unique',
+          platform: body.platform ?? 'instagram',
+          brand: brandGlobale,
+          youtube_type: body.youtube_type,
+        },
+      ]
+
+  // Reecriture : au moins une cible arrive avec son texte actuel.
+  const reecriture = toutes.some((c) => (c.existant ?? '').trim().length > 0)
+
+  const consignes = await lireConsignes()
+
+  // Chaque plateforme et chaque marque enoncee une fois, pas une fois par cible.
+  const plateformesUtiles = [...new Set(toutes.map((c) => c.platform))]
+  const marquesUtiles = [...new Set(toutes.map((c) => c.brand).filter(Boolean))] as string[]
+
+  const blocsPlateforme: string[] = []
+  for (const p of plateformesUtiles) {
+    const consigne = consignes.plateformes.get(p)
+    if (!consigne) continue
+
+    if (p === 'youtube') {
+      const types = [...new Set(toutes.filter((c) => c.platform === p).map((c) => c.youtube_type ?? 'short'))]
+      for (const type of types) {
+        const nom = type === 'video' ? 'youtube video classique' : 'youtube short'
+        const description = blocPour(consigne, `${type}_description`)
+        if (description) blocsPlateforme.push(texteBloc(description, `Plateforme ${nom}, texte`))
+        if (type === 'video') {
+          const titre = blocPour(consigne, 'video_titre')
+          if (titre) blocsPlateforme.push(texteBloc(titre, `Plateforme ${nom}, titre`))
+        }
+      }
+    } else {
+      blocsPlateforme.push(texteBloc(consigne, `Plateforme ${p}`))
+    }
+  }
+
+  const blocsMarque: string[] = []
+  for (const m of marquesUtiles) {
+    const consigne = consignes.marques.get(m)
+    if (!consigne) continue
+    const texte = texteMarque(m, consigne)
+    if (texte) blocsMarque.push(texte)
+  }
+
+  if (!subject && !reecriture) {
+    return json({ error: 'Le sujet est obligatoire' }, 400)
+  }
+
   const contexte = [
-    `Sujet de la video : ${subject}`,
-    brand ? `Marque : ${brand}` : '',
+    subject ? `Sujet de la video : ${subject}` : '',
     `Langue : ${language}`,
-    `Ton general : ${tone}`,
+    tone ? `Ton demande pour cette video en particulier : ${tone}` : '',
   ].filter(Boolean)
 
-  const prompt = enLot
-    ? [
-        ...contexte,
-        '',
-        `Ecris ${cibles.length} textes differents, un par cible ci-dessous :`,
-        ...cibles.map((c, i) => {
-          const nom = c.account_name ? ` (compte ${c.account_name})` : ''
-          return `${i + 1}. id="${c.id}"${nom} : ${brief(c.platform, c.youtube_type)}`
-        }),
-      ].join('\n')
-    : [
-        ...contexte,
-        `Plateforme : ${brief(body.platform ?? 'instagram', body.youtube_type)}`,
-      ].join('\n')
+  const consignesTexte = [
+    blocsMarque.length > 0 ? blocsMarque.join('\n\n') : '',
+    blocsPlateforme.length > 0 ? blocsPlateforme.join('\n\n') : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+
+  const system = [
+    enLot
+      ? 'Tu ecris des legendes pour une meme video, publiee sur plusieurs comptes de reseaux sociaux.'
+      : 'Tu ecris des legendes pour des videos courtes publiees sur les reseaux sociaux.',
+    '',
+    REGLES_FIXES,
+    '',
+    ARBITRAGE,
+    ...(enLot ? ['', DIFFERENCIATION] : []),
+    '',
+    enLot ? FORMAT_LOT : FORMAT_SIMPLE,
+  ].join('\n')
+
+  function construirePrompt(correction?: string): string {
+    const lignes = [
+      ...contexte,
+      '',
+      consignesTexte ? `CONSIGNES\n\n${consignesTexte}\n` : '',
+      reecriture
+        ? `Reecris les ${toutes.length} texte(s) ci-dessous pour qu'ils respectent les consignes. Garde le sujet et le fond de chaque texte actuel, change la forme autant qu'il le faut.`
+        : enLot
+          ? `Ecris ${toutes.length} textes differents, un par cible ci-dessous. Applique a chacune les consignes de sa marque et de sa plateforme.`
+          : 'Ecris un texte pour la cible ci-dessous.',
+      ...toutes.map(referenceCible),
+    ]
+    if (correction) lignes.push('', correction)
+    return lignes.filter((l) => l !== '').join('\n')
+  }
 
   const client = new Anthropic({ apiKey })
 
-  try {
+  type Tirage =
+    | { variantes: Variante[]; usage: { input_tokens: number; output_tokens: number }; model: string }
+    | { erreur: string; statut: number }
+
+  async function appeler(prompt: string): Promise<Tirage> {
     const response = await client.beta.messages.create({
       model: MODEL,
       // Le mode lot ecrit plusieurs textes : il lui faut de la place.
-      max_tokens: enLot ? Math.min(8000, 800 + cibles.length * 400) : 2000,
+      max_tokens: enLot ? Math.min(8000, 800 + toutes.length * 400) : 2000,
       // Differencier reellement des textes demande un peu plus de reflexion
       // que d'en ecrire un seul.
       output_config: { effort: enLot ? 'medium' : 'low' },
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
-      system: enLot ? SYSTEM_LOT : SYSTEM_SIMPLE,
+      system,
       messages: [{ role: 'user', content: prompt }],
     })
 
     if (response.stop_reason === 'refusal') {
-      return json({ error: 'La generation a ete refusee pour ce sujet' }, 422)
+      return { erreur: 'La generation a ete refusee pour ce sujet', statut: 422 }
     }
 
     const texte = response.content
@@ -221,69 +410,158 @@ Deno.serve(async (req) => {
       .map((block) => (block as { text: string }).text)
       .join('\n')
 
-    const parse = extraireJson(texte, enLot ? 'tableau' : 'objet')
     const usage = {
       input_tokens: response.usage.input_tokens,
       output_tokens: response.usage.output_tokens,
     }
 
     if (enLot) {
-      const liste = Array.isArray(parse) ? parse : []
-      const parId = new Map<
-        string,
-        { caption: string; hashtags: string[]; title: string | null }
-      >()
+      const liste = extraireJson(texte, 'tableau')
+      const parId = new Map<string, { caption: string; hashtags: string[]; title: string | null }>()
 
-      for (const item of liste as Array<Record<string, unknown>>) {
+      for (const item of (Array.isArray(liste) ? liste : []) as Array<Record<string, unknown>>) {
         const id = String(item?.id ?? '')
         if (!id) continue
-        const caption = nettoyer(item.caption as string)
-        if (ressembleAJson(caption)) {
-          console.error('Legende rejetee, elle ressemble a du JSON', id, caption.slice(0, 120))
-          continue
-        }
         parId.set(id, {
-          caption,
+          caption: nettoyer(item.caption as string),
           hashtags: normaliserHashtags(item.hashtags),
           title: nettoyer(item.title as string) || null,
         })
       }
 
-      // On renvoie une entree par cible demandee, meme si le modele en a
-      // oublie une : le frontend saura laquelle est vide et la proposera a
-      // regenerer, plutot que de decaler silencieusement les textes.
-      const resultats = cibles.map((c) => ({
-        id: c.id,
-        caption: parId.get(c.id)?.caption ?? '',
-        hashtags: parId.get(c.id)?.hashtags ?? [],
-        title: parId.get(c.id)?.title ?? null,
-      }))
-
-      const manquants = resultats.filter((r) => !r.caption).length
-      if (manquants === resultats.length) {
-        return json({ error: 'Aucune legende exploitable, reessaie' }, 502)
+      // Une entree par cible demandee, meme si le modele en a oublie une : le
+      // frontend saura laquelle est vide, plutot que de decaler les textes.
+      return {
+        variantes: toutes.map((c) => ({
+          id: c.id,
+          caption: parId.get(c.id)?.caption ?? '',
+          hashtags: parId.get(c.id)?.hashtags ?? [],
+          title: parId.get(c.id)?.title ?? null,
+          problemes: [],
+        })),
+        usage,
+        model: response.model,
       }
-
-      return json({ results: resultats, manquants, model: response.model, usage })
     }
 
-    const objet = (parse ?? {}) as Record<string, unknown>
+    const objet = (extraireJson(texte, 'objet') ?? {}) as Record<string, unknown>
     // Repli sur le texte brut seulement s'il ne ressemble pas a du JSON :
     // c'est exactement par la que le JSON entier se retrouvait en legende.
     const brut = nettoyer(texte)
     const caption = nettoyer(objet.caption as string) || (ressembleAJson(brut) ? '' : brut)
 
-    if (!caption) return json({ error: 'Legende vide, reessaie' }, 502)
-    if (ressembleAJson(caption)) {
-      console.error('Legende rejetee, elle ressemble a du JSON', caption.slice(0, 150))
+    return {
+      variantes: [
+        {
+          id: 'unique',
+          caption,
+          hashtags: normaliserHashtags(objet.hashtags),
+          title: nettoyer(objet.title as string) || null,
+          problemes: [],
+        },
+      ],
+      usage,
+      model: response.model,
+    }
+  }
+
+  /** Ce qu'on redemande au modele quand un controle a echoue. */
+  function messageCorrection(mauvaises: Variante[]): string {
+    const details = mauvaises.map((v) => {
+      const cible = toutes.find((c) => c.id === v.id)
+      const nom = cible?.account_name ?? v.id
+      return `- id="${v.id}" (${nom}) : ${v.problemes.map((p) => p.message).join(' ; ')}`
+    })
+    return [
+      'Ta reponse precedente ne respectait pas les consignes sur les points suivants :',
+      ...details,
+      '',
+      "Reecris TOUS les textes demandes en corrigeant ces points. Respecte scrupuleusement les fourchettes de longueur et le nombre de hashtags. Si un texte etait juge trop proche d'un autre, change son angle, pas seulement quelques mots.",
+    ].join('\n')
+  }
+
+  try {
+    const premier = await appeler(construirePrompt())
+    if ('erreur' in premier) return json({ error: premier.erreur }, premier.statut)
+
+    let variantes = controler(premier.variantes, toutes, consignes)
+    let relance = false
+    const usages = [premier.usage]
+
+    // Un reglage inconciliable ne se corrige pas en reecrivant : relancer sur
+    // ce motif ferait payer un second appel pour le meme resultat.
+    const corrigeable = (v: Variante) =>
+      v.problemes.some((p) => p.code !== 'conflit-consignes')
+
+    // Une seule relance. Deux appels payants valent mieux qu'un texte non
+    // conforme enregistre, mais boucler couterait plus cher que le probleme.
+    if (variantes.some(corrigeable)) {
+      relance = true
+      const mauvaises = variantes.filter(corrigeable)
+      console.warn(
+        'Relance apres controle',
+        mauvaises.map((v) => `${v.id}: ${v.problemes.map((p) => p.code).join(',')}`).join(' | '),
+      )
+
+      const seconde = await appeler(construirePrompt(messageCorrection(mauvaises)))
+      if (!('erreur' in seconde)) {
+        const apres = controler(seconde.variantes, toutes, consignes)
+        usages.push(seconde.usage)
+
+        // On garde, cible par cible, la meilleure des deux tentatives : une
+        // relance qui corrige huit textes sur neuf ne doit pas faire perdre le
+        // neuvieme s'il etait bon du premier coup.
+        variantes = variantes.map((avant) => {
+          if (!corrigeable(avant)) return avant
+          const apresV = apres.find((x) => x.id === avant.id)
+          if (!apresV?.caption) return avant
+          return apresV.problemes.length <= avant.problemes.length ? apresV : avant
+        })
+      }
+    }
+
+    if (variantes.every((v) => !v.caption)) {
+      return json({ error: 'Aucune legende exploitable, reessaie' }, 502)
+    }
+
+    const usage = usages.reduce(
+      (acc, u) => ({
+        input_tokens: acc.input_tokens + (u?.input_tokens ?? 0),
+        output_tokens: acc.output_tokens + (u?.output_tokens ?? 0),
+      }),
+      { input_tokens: 0, output_tokens: 0 },
+    )
+
+    if (enLot) {
+      return json({
+        results: variantes.map((v) => ({
+          id: v.id,
+          caption: v.caption,
+          hashtags: v.hashtags,
+          title: v.title,
+          problemes: v.problemes,
+        })),
+        manquants: variantes.filter((v) => !v.caption).length,
+        relance,
+        model: premier.model,
+        usage,
+      })
+    }
+
+    const seule = variantes[0]
+    if (!seule.caption) return json({ error: 'Legende vide, reessaie' }, 502)
+    if (ressembleAJson(seule.caption)) {
+      console.error('Legende rejetee, elle ressemble a du JSON', seule.caption.slice(0, 150))
       return json({ error: 'La reponse du modele etait mal formee, relance la generation' }, 502)
     }
 
     return json({
-      caption,
-      hashtags: normaliserHashtags(objet.hashtags),
-      title: nettoyer(objet.title as string) || null,
-      model: response.model,
+      caption: seule.caption,
+      hashtags: seule.hashtags,
+      title: seule.title,
+      problemes: seule.problemes,
+      relance,
+      model: premier.model,
       usage,
     })
   } catch (err) {

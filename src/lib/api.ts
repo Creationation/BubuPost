@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { errorMessage } from './errors'
 import type { Account, PostWithAccount, Profile, PublishLog } from './types'
+import type { LigneConsigne, Probleme } from './consignes'
 
 /** Toute erreur supabase remonte comme une vraie Error, lisible a l'ecran. */
 function unwrap<T>(res: { data: T | null; error: unknown }): T {
@@ -248,19 +249,30 @@ export async function uploadVideo(
 // ---------------------------------------------------------------------------
 
 /** Le titre n existe que pour une video YouTube classique. */
-export type CaptionResult = { caption: string; hashtags: string[]; title?: string | null }
+export type CaptionResult = {
+  caption: string
+  hashtags: string[]
+  title?: string | null
+  problemes?: Probleme[]
+}
 
 export type CaptionCible = {
   id: string
   platform: string
+  /** La marque decide du ton et du vocabulaire, elle voyage avec la cible. */
+  brand?: string
   account_name?: string
   youtube_type?: 'short' | 'video'
+  /** Texte actuel, quand on reecrit une publication deja programmee. */
+  existant?: string
 }
 export type CaptionVariante = {
   id: string
   caption: string
   hashtags: string[]
   title?: string | null
+  /** Ce que les controles ont trouve, apres la relance eventuelle. */
+  problemes?: Probleme[]
 }
 
 /**
@@ -271,15 +283,16 @@ export type CaptionVariante = {
  * lieu de produire n fois la meme idee reformulee.
  */
 export async function generateCaptionBatch(input: {
-  subject: string
+  subject?: string
   targets: CaptionCible[]
   brand?: string
   language?: string
   tone?: string
-}): Promise<{ results: CaptionVariante[]; manquants: number }> {
+}): Promise<{ results: CaptionVariante[]; manquants: number; relance: boolean }> {
   const { data, error } = await supabase.functions.invoke<{
     results?: CaptionVariante[]
     manquants?: number
+    relance?: boolean
     error?: string
   }>('generate-caption', { body: input })
 
@@ -299,7 +312,11 @@ export async function generateCaptionBatch(input: {
   }
 
   if (!data || data.error) throw new Error(data?.error ?? 'Reponse vide')
-  return { results: data.results ?? [], manquants: data.manquants ?? 0 }
+  return {
+    results: data.results ?? [],
+    manquants: data.manquants ?? 0,
+    relance: data.relance ?? false,
+  }
 }
 
 export async function generateCaption(input: {
@@ -316,7 +333,45 @@ export async function generateCaption(input: {
   )
   if (error) throw new Error(errorMessage(error))
   if (!data || data.error) throw new Error(data?.error ?? 'Reponse vide')
-  return { caption: data.caption, hashtags: data.hashtags ?? [], title: data.title ?? null }
+  return {
+    caption: data.caption,
+    hashtags: data.hashtags ?? [],
+    title: data.title ?? null,
+    problemes: data.problemes ?? [],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Consignes de generation
+// ---------------------------------------------------------------------------
+
+/** Toutes les consignes, plateformes et marques melangees. */
+export async function listConsignes(): Promise<LigneConsigne[]> {
+  // portee est un texte contraint par un check en base, pas un enum Postgres :
+  // les types generes le voient comme un string, on le resserre ici.
+  const lignes = unwrap(
+    await supabase.from('consignes').select('portee, cle, reglages, updated_at').order('cle'),
+  )
+  return lignes as LigneConsigne[]
+}
+
+/**
+ * Enregistre une consigne, en creant la ligne si elle n'existe pas.
+ *
+ * Une marque ajoutee apres la migration n'a pas de ligne : la page doit pouvoir
+ * la creer sans passer par une nouvelle migration.
+ */
+export async function saveConsigne(
+  portee: 'plateforme' | 'marque',
+  cle: string,
+  reglages: Record<string, unknown>,
+): Promise<void> {
+  unwrap(
+    await supabase
+      .from('consignes')
+      .upsert({ portee, cle, reglages: reglages as never }, { onConflict: 'portee,cle' })
+      .select('cle'),
+  )
 }
 
 export type QuotaYoutube = {
