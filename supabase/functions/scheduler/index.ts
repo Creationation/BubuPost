@@ -5,7 +5,12 @@
 // passage suivant qui reprend la ou on s'est arrete. Rien n'est perdu.
 import { createClient, SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 import { adapterFor, Account, PlatformError } from '../_shared/adapters/index.ts'
-import { failureMessage, notifyTelegram } from '../_shared/notify.ts'
+import {
+  messageEchecs,
+  messageQuota,
+  notifyTelegram,
+  type EchecPublication,
+} from '../_shared/notify.ts'
 import { corsHeaders, json } from '../_shared/cors.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -103,6 +108,7 @@ async function handleFailure(
   post: Post,
   err: unknown,
   settings: Settings,
+  echecs: EchecPublication[],
 ): Promise<void> {
   const platformErr = err instanceof PlatformError ? err : null
   const reason = err instanceof Error ? err.message : String(err)
@@ -136,18 +142,19 @@ async function handleFailure(
     await log(db, post.id, 'failed', { reason, attempts, detail: platformErr?.detail ?? null })
   }
 
-  if (settings.notify.telegram_enabled) {
-    await notifyTelegram(
-      failureMessage({
-        platform: post.accounts.platform,
-        accountName: post.accounts.account_name,
-        brand: post.accounts.brand,
-        reason,
-        attempts,
-        maxAttempts: max,
-        postId: post.id,
-      }),
-    )
+  // On n'alerte que sur un abandon definitif. Prevenir a chaque tentative
+  // intermediaire ferait trois messages pour un incident qui se resout parfois
+  // tout seul au deuxieme essai.
+  if (!canRetry && settings.notify.telegram_enabled) {
+    echecs.push({
+      platform: post.accounts.platform,
+      accountName: post.accounts.account_name,
+      brand: post.accounts.brand,
+      videoUrl: post.video_url,
+      scheduledAt: post.scheduled_at,
+      reason,
+      definitif: true,
+    })
   }
 }
 
@@ -155,15 +162,38 @@ async function processPost(
   db: SupabaseClient,
   post: Post,
   settings: Settings,
+  echecs: EchecPublication[],
 ): Promise<string> {
   const account = post.accounts
 
   if (account.status !== 'active') {
+    const raison =
+      account.status === 'paused'
+        ? 'Le compte est en pause, la publication ne part pas.'
+        : account.status === 'expired'
+          ? "Le token du compte a expire, il faut le reconnecter depuis l'onglet Comptes."
+          : "Le compte est en erreur, teste sa connexion depuis l'onglet Comptes."
+
     await db
       .from('posts')
-      .update({ status: 'failed', error_message: `Compte ${account.status}` })
+      .update({ status: 'failed', error_message: raison })
       .eq('id', post.id)
     await log(db, post.id, 'skipped_account_inactive', { account_status: account.status })
+
+    // Une mise en pause est un choix delibere : prevenir serait du bruit. Un
+    // compte expire ou en erreur, en revanche, fait echouer les publications
+    // sans que rien ne le signale, et c'est exactement ce qu'on veut savoir.
+    if (account.status !== 'paused' && settings.notify.telegram_enabled) {
+      echecs.push({
+        platform: account.platform,
+        accountName: account.account_name,
+        brand: account.brand,
+        videoUrl: post.video_url,
+        scheduledAt: post.scheduled_at,
+        reason: raison,
+        definitif: true,
+      })
+    }
     return 'compte inactif'
   }
 
@@ -176,6 +206,19 @@ async function processPost(
       .update({ next_attempt_at: new Date(Date.now() + 3600_000).toISOString() })
       .eq('id', post.id)
     await log(db, post.id, 'rate_limited', { used, limit, platform: account.platform })
+
+    if (settings.notify.telegram_enabled) {
+      await notifyTelegram(
+        messageQuota({
+          platform: account.platform,
+          accountName: account.account_name,
+          used,
+          limit,
+          videoUrl: post.video_url,
+        }),
+        db,
+      )
+    }
     return 'quota atteint'
   }
 
@@ -240,11 +283,12 @@ async function processPost(
     if (settings.notify.notify_on_success) {
       await notifyTelegram(
         `✅ Publie sur ${adapter.label} (${account.account_name})\n${platformPostId}`,
+        db,
       )
     }
     return 'publie'
   } catch (err) {
-    await handleFailure(db, post, err, settings)
+    await handleFailure(db, post, err, settings, echecs)
     return 'echec'
   }
 }
@@ -296,13 +340,23 @@ Deno.serve(async (req) => {
   }
 
   const results: Array<{ post: string; outcome: string }> = []
+
+  // Les echecs sont collectes puis annonces ensemble : un token expire fait
+  // tomber toutes les publications du jour, et neuf messages pour un seul
+  // probleme finiraient par ne plus etre lus.
+  const echecs: EchecPublication[] = []
+
   for (const post of (posts ?? []) as Post[]) {
     if (!post.accounts) {
       await log(db, post.id, 'skipped_no_account', null)
       continue
     }
-    const outcome = await processPost(db, post, settings)
+    const outcome = await processPost(db, post, settings, echecs)
     results.push({ post: post.id, outcome })
+  }
+
+  if (echecs.length > 0) {
+    await notifyTelegram(messageEchecs(echecs), db)
   }
 
   if (passage?.id) {

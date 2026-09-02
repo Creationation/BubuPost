@@ -208,27 +208,30 @@ export default function Guide() {
           open={open === 'telegram'}
           onToggle={() => toggle('telegram')}
         >
-          <p className="mb-4 text-sm text-mist-300">
-            C'est ce qui t'evite de venir verifier l'application tous les jours : si une publication
-            rate, tu recois un message.
+          <p className="mb-4 rounded-lg border border-ok-600/40 bg-ok-600/10 px-3 py-2 text-xs text-ok-400">
+            Configure et teste. Tu recevras un message quand une publication echoue
+            definitivement, quand un token ne peut plus etre renouvele, ou quand un quota est
+            atteint.
           </p>
           <ol className="space-y-3">
             <Step n={1}>
-              Dans Telegram, cherche <Code>@BotFather</Code> et envoie-lui <Code>/newbot</Code>.
+              Pour verifier a tout moment, va dans l'onglet Admin et clique sur{' '}
+              <strong className="text-mist-100">Tester les alertes Telegram</strong>. Un message
+              arrive dans la seconde.
             </Step>
             <Step n={2}>
-              Donne un nom, puis un identifiant finissant par <Code>_bot</Code>. BotFather te
-              repond avec un token.
+              Tu n'es prevenu que sur un abandon definitif, jamais sur une tentative
+              intermediaire : beaucoup d'erreurs se resolvent toutes seules au deuxieme essai.
             </Step>
             <Step n={3}>
-              Envoie un simple "salut" a ton nouveau bot. Sans ce premier message, il n'a pas le
-              droit de t'ecrire.
+              Si plusieurs publications tombent en meme temps, par exemple parce qu'un token a
+              expire, tu recois <strong className="text-mist-100">un seul message</strong> qui les
+              regroupe. Un meme message ne se repete jamais dans l'heure.
             </Step>
             <Step n={4}>
-              Ouvre <Code>https://api.telegram.org/botTON_TOKEN/getUpdates</Code> dans ton
-              navigateur, et releve le nombre affiche apres <Code>"chat":&#123;"id":</Code>.
+              Tu peux couper les alertes, ou au contraire etre prevenu aussi des reussites, dans
+              l'onglet Admin.
             </Step>
-            <Step n={5}>Donne-moi le token et ce nombre, je branche le tout.</Step>
           </ol>
         </Panel>
       </div>

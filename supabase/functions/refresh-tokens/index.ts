@@ -9,7 +9,7 @@
 import { createClient, SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders, json } from '../_shared/cors.ts'
 import { TikTokOAuthError, explain, rafraichir } from '../_shared/tiktok-oauth.ts'
-import { notifyTelegram } from '../_shared/notify.ts'
+import { messageTokenExpire, notifyTelegram } from '../_shared/notify.ts'
 import {
   MetaError,
   explain as expliquerMeta,
@@ -54,7 +54,13 @@ async function renouvelerTikTok(db: SupabaseClient, compte: Compte): Promise<str
     await db.from('accounts').update({ status: 'expired' }).eq('id', compte.id)
     console.warn(`${compte.account_name} : aucun refresh token, statut passe a expired`)
     await notifyTelegram(
-      `⚠️ TikTok : le compte ${compte.account_name} n'a pas de refresh token. Reconnecte-le depuis l'onglet Comptes.`,
+      messageTokenExpire({
+        platform: compte.platform,
+        accountName: compte.account_name,
+        brand: compte.brand,
+        reason: "Aucun refresh token enregistre pour ce compte.",
+      }),
+      db,
     )
     return 'sans refresh token'
   }
@@ -96,15 +102,13 @@ async function renouvelerTikTok(db: SupabaseClient, compte: Compte): Promise<str
     console.error(`${compte.account_name} : renouvellement en echec`, e?.code, e?.description)
 
     await notifyTelegram(
-      [
-        '❌ <b>TikTok : renouvellement impossible</b>',
-        `Compte : ${compte.account_name}`,
-        `Marque : ${compte.brand}`,
-        '',
-        `Raison : ${raison}`,
-        '',
-        "Le compte est passe en expire. Reconnecte-le depuis l'onglet Comptes.",
-      ].join('\n'),
+      messageTokenExpire({
+        platform: compte.platform,
+        accountName: compte.account_name,
+        brand: compte.brand,
+        reason: raison,
+      }),
+      db,
     )
     return `echec : ${raison}`
   }
@@ -119,7 +123,13 @@ async function renouvelerMeta(db: SupabaseClient, compte: Compte): Promise<strin
   if (!compte.refresh_token) {
     await db.from('accounts').update({ status: 'expired' }).eq('id', compte.id)
     await notifyTelegram(
-      `⚠️ Meta : le compte ${compte.account_name} n'a pas de jeton utilisateur enregistre. Reconnecte-le depuis l'onglet Comptes.`,
+      messageTokenExpire({
+        platform: compte.platform,
+        accountName: compte.account_name,
+        brand: compte.brand,
+        reason: "Aucun jeton utilisateur enregistre pour ce compte.",
+      }),
+      db,
     )
     return 'sans jeton utilisateur'
   }
@@ -139,7 +149,13 @@ async function renouvelerMeta(db: SupabaseClient, compte: Compte): Promise<strin
     if (!page) {
       await db.from('accounts').update({ status: 'expired' }).eq('id', compte.id)
       await notifyTelegram(
-        `❌ Meta : le compte ${compte.account_name} n'est plus accessible avec cette autorisation. La Page a peut-etre ete dissociee. Reconnecte-le.`,
+        messageTokenExpire({
+          platform: compte.platform,
+          accountName: compte.account_name,
+          brand: compte.brand,
+          reason: "Ce compte n est plus accessible avec cette autorisation. La Page a peut-etre ete dissociee du portefeuille.",
+        }),
+        db,
       )
       return 'compte introuvable dans les Pages'
     }
@@ -175,15 +191,13 @@ async function renouvelerMeta(db: SupabaseClient, compte: Compte): Promise<strin
     console.error(`${compte.account_name} : renouvellement en echec`, e?.code, e?.message)
 
     await notifyTelegram(
-      [
-        '❌ <b>Meta : renouvellement impossible</b>',
-        `Compte : ${compte.account_name}`,
-        `Marque : ${compte.brand}`,
-        '',
-        `Raison : ${raison}`,
-        '',
-        "Le compte est passe en expire. Reconnecte-le depuis l'onglet Comptes.",
-      ].join('\n'),
+      messageTokenExpire({
+        platform: compte.platform,
+        accountName: compte.account_name,
+        brand: compte.brand,
+        reason: raison,
+      }),
+      db,
     )
     return `echec : ${raison}`
   }

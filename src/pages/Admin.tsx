@@ -7,6 +7,7 @@ import {
   runSchedulerNow,
   saveSetting,
   setProfileRole,
+  testTelegram,
 } from '../lib/api'
 import { friendlyError } from '../lib/errors'
 import { useAuth } from '../context/AuthContext'
@@ -71,6 +72,7 @@ export default function Admin() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
+  const [testingTelegram, setTestingTelegram] = useState(false)
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -123,6 +125,21 @@ export default function Admin() {
       setError(friendlyError(err))
     } finally {
       setRunning(false)
+    }
+  }
+
+  async function essayerTelegram() {
+    setTestingTelegram(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const r = await testTelegram()
+      if (r.ok) setNotice(r.message ?? 'Message envoye.')
+      else setError(r.error ?? "L'envoi n'a pas abouti")
+    } catch (err) {
+      setError(friendlyError(err))
+    } finally {
+      setTestingTelegram(false)
     }
   }
 
@@ -291,9 +308,18 @@ export default function Admin() {
               Prevenir aussi a chaque publication reussie
             </label>
           </div>
-          <button className="btn btn-ghost mt-4" onClick={() => void save('notify', notify)}>
-            Enregistrer
-          </button>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button className="btn btn-ghost" onClick={() => void save('notify', notify)}>
+              Enregistrer
+            </button>
+            <button
+              className="btn btn-ghost"
+              onClick={() => void essayerTelegram()}
+              disabled={testingTelegram}
+            >
+              {testingTelegram ? 'Envoi...' : 'Tester les alertes Telegram'}
+            </button>
+          </div>
         </Card>
 
         <Card title="Consommation des quotas" hint="Publications reussies sur les 24 dernieres heures.">

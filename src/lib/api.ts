@@ -348,6 +348,18 @@ export async function checkAccount(accountId: string): Promise<AccountCheck> {
   return data
 }
 
+export type TelegramTest = { ok: boolean; message?: string; error?: string }
+
+/** Envoie un message de test, pour verifier la configuration sans attendre une panne. */
+export async function testTelegram(): Promise<TelegramTest> {
+  const { data, error } = await supabase.functions.invoke<TelegramTest>('telegram-test', {
+    body: {},
+  })
+  if (error) throw new Error(errorMessage(error))
+  if (!data) throw new Error('Reponse vide')
+  return data
+}
+
 /** Declenche un passage du scheduler tout de suite, sans attendre le cron. */
 export async function runSchedulerNow(): Promise<unknown> {
   const { data, error } = await supabase.functions.invoke('scheduler', { body: {} })
