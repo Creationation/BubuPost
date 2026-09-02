@@ -4,7 +4,7 @@ import { listAccounts, listPosts } from '../lib/api'
 import { friendlyError } from '../lib/errors'
 import {
   PLATFORM_ICON,
-  daysUntilExpiry,
+  decrireToken,
   type Account,
   type PostWithAccount,
 } from '../lib/types'
@@ -70,20 +70,19 @@ export default function Dashboard() {
     }
   }, [posts, accounts])
 
-  /** Ce qui demande une action : token bientot mort, ou compte en erreur. */
+  /**
+   * Ce qui demande vraiment une action.
+   *
+   * Un token qui se renouvelle tout seul n'a rien a faire ici : le signaler
+   * chaque jour apprend a ignorer les alertes, et le vrai probleme passerait
+   * alors inapercu.
+   */
   const alerts = useMemo(() => {
     const out: { text: string; bad: boolean }[] = []
     for (const a of accounts) {
-      if (a.status === 'error') out.push({ text: `${a.account_name} est en erreur`, bad: true })
-      else if (a.status === 'expired')
-        out.push({ text: `${a.account_name} : token expire`, bad: true })
-      else if (a.status === 'active' && !a.access_token)
-        out.push({ text: `${a.account_name} n'a aucun token enregistre`, bad: true })
-
-      const days = daysUntilExpiry(a.token_expiry)
-      if (a.status === 'active' && days !== null && days >= 0 && days <= 10) {
-        out.push({ text: `${a.account_name} : token expire dans ${days} j`, bad: days <= 3 })
-      }
+      const etat = decrireToken(a)
+      if (!etat || etat.ton === 'ok') continue
+      out.push({ text: `${a.account_name} : ${etat.texte.toLowerCase()}`, bad: etat.ton === 'bad' })
     }
     return out
   }, [accounts])

@@ -251,6 +251,39 @@ export async function pagesAvecInstagram(userToken: string): Promise<PageInstagr
 }
 
 /**
+ * L'echeance reelle d'un jeton, demandee a Meta plutot que deduite.
+ *
+ * Le fragment de l'URL de retour porte le expires_in du jeton COURT, une ou
+ * deux heures. Le garder revenait a afficher une expiration imminente sur un
+ * jeton valable soixante jours. Meta connait la vraie valeur, autant la lui
+ * demander.
+ *
+ * Un jeton de Page derive d'un jeton utilisateur longue duree n'expire pas :
+ * Meta renvoie alors expires_at a zero. Ce qui limite l'acces dans le temps
+ * est data_access_expires_at, c'est donc lui qui fait foi dans ce cas.
+ */
+export async function expirationReelle(token: string): Promise<string | null> {
+  try {
+    const t = encodeURIComponent(token)
+    const json = await graph(
+      `${GRAPH}/debug_token?input_token=${t}&access_token=${t}`,
+      'Lecture de l echeance du jeton',
+    )
+    const data = (json.data ?? {}) as Record<string, unknown>
+
+    const expire = typeof data.expires_at === 'number' ? data.expires_at : 0
+    const acces =
+      typeof data.data_access_expires_at === 'number' ? data.data_access_expires_at : 0
+
+    // expires_at a zero signifie « n'expire pas ».
+    const secondes = expire > 0 ? expire : acces
+    return secondes > 0 ? new Date(secondes * 1000).toISOString() : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Prolonge un jeton utilisateur de longue duree.
  * Les Page Access Tokens derives n'expirent pas, mais ils cessent de
  * fonctionner si le jeton utilisateur dont ils viennent expire. C'est donc

@@ -79,3 +79,66 @@ export function daysUntilExpiry(expiry: string | null): number | null {
   const ms = new Date(expiry).getTime() - Date.now()
   return Math.floor(ms / 86_400_000)
 }
+
+/**
+ * Plateformes dont le token se renouvelle tout seul, chaque nuit a 4 h.
+ * Pour celles-ci, une echeance proche est le fonctionnement normal, pas une
+ * alerte : un token TikTok ne vit que 24 h par construction.
+ */
+export const RENOUVELLEMENT_AUTO = new Set(['tiktok', 'instagram', 'facebook'])
+
+/** « 3 h », « 12 j », « 2 mois ». Jamais « 0 j », qui ne veut rien dire. */
+function dureeLisible(ms: number): string {
+  const heures = Math.floor(ms / 3_600_000)
+  if (heures < 1) return `${Math.max(1, Math.round(ms / 60_000))} min`
+  if (heures < 24) return `${heures} h`
+
+  const jours = Math.floor(heures / 24)
+  if (jours < 60) return `${jours} j`
+  return `${Math.round(jours / 30)} mois`
+}
+
+export type EtatToken = { texte: string; ton: 'ok' | 'warn' | 'bad' }
+
+/**
+ * Ce qu'il faut dire de l'echeance d'un token, ou null s'il n'y a rien a dire.
+ *
+ * Afficher « expire dans 0 j » sur un compte qui vient de publier est pire que
+ * de ne rien afficher : ca fait chercher une panne qui n'existe pas.
+ */
+export function decrireToken(account: Account): EtatToken | null {
+  if (!account.access_token) {
+    return { texte: 'Aucun token enregistre', ton: 'bad' }
+  }
+
+  const auto = RENOUVELLEMENT_AUTO.has(account.platform)
+
+  if (account.status === 'expired') {
+    return { texte: 'Token expire, reconnecte le compte', ton: 'bad' }
+  }
+  if (account.status === 'error') {
+    return { texte: 'Derniere verification en echec', ton: 'bad' }
+  }
+
+  if (!account.token_expiry) {
+    return auto ? { texte: 'Renouvelle automatiquement', ton: 'ok' } : null
+  }
+
+  const restant = new Date(account.token_expiry).getTime() - Date.now()
+
+  if (restant <= 0) {
+    // Le renouvellement de la nuit n'est peut-etre pas encore passe.
+    return auto
+      ? { texte: 'Renouvellement attendu cette nuit', ton: 'warn' }
+      : { texte: 'Token expire', ton: 'bad' }
+  }
+
+  if (auto) {
+    return { texte: `Renouvelle automatiquement, valable ${dureeLisible(restant)}`, ton: 'ok' }
+  }
+
+  const jours = restant / 86_400_000
+  if (jours <= 3) return { texte: `Token expire dans ${dureeLisible(restant)}`, ton: 'bad' }
+  if (jours <= 10) return { texte: `Token expire dans ${dureeLisible(restant)}`, ton: 'warn' }
+  return null
+}

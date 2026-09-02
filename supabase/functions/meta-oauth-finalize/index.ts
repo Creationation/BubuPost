@@ -9,6 +9,7 @@ import { corsHeaders, json } from '../_shared/cors.ts'
 import {
   MetaError,
   explain,
+  expirationReelle,
   pagesAvecInstagram,
   prolongerJeton,
   type PageInstagram,
@@ -155,11 +156,16 @@ Deno.serve(async (req) => {
       console.warn('Prolongation impossible', err instanceof Error ? err.message : err)
     }
 
-    const expiry = expiresIn
-      ? new Date(Date.now() + expiresIn * 1000).toISOString()
-      : body.data_access_expiration_time
+    // On demande l'echeance a Meta plutot que de la deduire du fragment : ce
+    // dernier porte celle du jeton court, une ou deux heures, alors qu'on
+    // detient un jeton valable soixante jours.
+    const expiry =
+      (await expirationReelle(userToken)) ??
+      (body.data_access_expiration_time
         ? new Date(body.data_access_expiration_time * 1000).toISOString()
-        : null
+        : expiresIn
+          ? new Date(Date.now() + expiresIn * 1000).toISOString()
+          : null)
 
     const pages = await pagesAvecInstagram(userToken)
 

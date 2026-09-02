@@ -13,6 +13,7 @@ import { notifyTelegram } from '../_shared/notify.ts'
 import {
   MetaError,
   explain as expliquerMeta,
+  expirationReelle,
   pagesAvecInstagram,
   prolongerJeton,
 } from '../_shared/meta-oauth.ts'
@@ -110,15 +111,15 @@ async function renouvelerTikTok(db: SupabaseClient, compte: Compte): Promise<str
 }
 
 /**
- * Instagram : on prolonge le jeton utilisateur, puis on en tire un jeton de
+ * Meta, Instagram et Facebook : on prolonge le jeton utilisateur, puis on en tire un jeton de
  * Page neuf. Reecrire le meme jeton de Page ne servirait a rien, c'est le
  * jeton utilisateur en amont qui perime, au bout de 60 jours.
  */
-async function renouvelerInstagram(db: SupabaseClient, compte: Compte): Promise<string> {
+async function renouvelerMeta(db: SupabaseClient, compte: Compte): Promise<string> {
   if (!compte.refresh_token) {
     await db.from('accounts').update({ status: 'expired' }).eq('id', compte.id)
     await notifyTelegram(
-      `⚠️ Instagram : le compte ${compte.account_name} n'a pas de jeton utilisateur enregistre. Reconnecte-le depuis l'onglet Comptes.`,
+      `⚠️ Meta : le compte ${compte.account_name} n'a pas de jeton utilisateur enregistre. Reconnecte-le depuis l'onglet Comptes.`,
     )
     return 'sans jeton utilisateur'
   }
@@ -127,18 +128,27 @@ async function renouvelerInstagram(db: SupabaseClient, compte: Compte): Promise<
     const prolonge = await prolongerJeton(compte.refresh_token)
     const pages = await pagesAvecInstagram(prolonge.token)
 
-    const page = pages.find((p) => p.ig_user_id === compte.external_account_id)
+    // L'identifiant externe differe des deux cotes : le compte Instagram
+    // porte l'IG User ID, la Page porte le Page ID. Chercher le mauvais
+    // laisserait Facebook sans renouvellement, et son jeton finirait par mourir.
+    const page = pages.find((p) =>
+      compte.platform === 'facebook'
+        ? p.page_id === compte.external_account_id
+        : p.ig_user_id === compte.external_account_id,
+    )
     if (!page) {
       await db.from('accounts').update({ status: 'expired' }).eq('id', compte.id)
       await notifyTelegram(
-        `❌ Instagram : le compte ${compte.account_name} n'est plus accessible avec cette autorisation. La Page a peut-etre ete dissociee. Reconnecte-le.`,
+        `❌ Meta : le compte ${compte.account_name} n'est plus accessible avec cette autorisation. La Page a peut-etre ete dissociee. Reconnecte-le.`,
       )
       return 'compte introuvable dans les Pages'
     }
 
-    const expiry = prolonge.expiresIn
-      ? new Date(Date.now() + prolonge.expiresIn * 1000).toISOString()
-      : null
+    // Meme raison qu a la connexion : on demande l echeance plutot que de la
+    // deduire, sinon un jeton de soixante jours parait expirer dans une heure.
+    const expiry =
+      (await expirationReelle(prolonge.token)) ??
+      (prolonge.expiresIn ? new Date(Date.now() + prolonge.expiresIn * 1000).toISOString() : null)
 
     const { error } = await db
       .from('accounts')
@@ -166,7 +176,7 @@ async function renouvelerInstagram(db: SupabaseClient, compte: Compte): Promise<
 
     await notifyTelegram(
       [
-        '❌ <b>Instagram : renouvellement impossible</b>',
+        '❌ <b>Meta : renouvellement impossible</b>',
         `Compte : ${compte.account_name}`,
         `Marque : ${compte.brand}`,
         '',
@@ -181,7 +191,9 @@ async function renouvelerInstagram(db: SupabaseClient, compte: Compte): Promise<
 
 /** Aiguillage par plateforme. */
 function renouveler(db: SupabaseClient, compte: Compte): Promise<string> {
-  if (compte.platform === 'instagram') return renouvelerInstagram(db, compte)
+  if (compte.platform === 'instagram' || compte.platform === 'facebook') {
+    return renouvelerMeta(db, compte)
+  }
   return renouvelerTikTok(db, compte)
 }
 
@@ -209,7 +221,7 @@ Deno.serve(async (req) => {
   const { data: comptes, error } = await db
     .from('accounts')
     .select('id, platform, account_name, brand, external_account_id, refresh_token, token_expiry, status')
-    .in('platform', ['tiktok', 'instagram'])
+    .in('platform', ['tiktok', 'instagram', 'facebook'])
     .in('status', ['active', 'error', 'expired'])
     .or(`token_expiry.is.null,token_expiry.lte.${limite}`)
 

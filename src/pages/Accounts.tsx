@@ -19,7 +19,7 @@ import {
   PLATFORMS,
   PLATFORM_ICON,
   PLATFORM_LABEL,
-  daysUntilExpiry,
+  decrireToken,
   type Account,
 } from '../lib/types'
 import { toLocalInput } from '../lib/format'
@@ -34,16 +34,6 @@ const EMPTY: AccountInput = {
   refresh_token: '',
   token_expiry: null,
   status: 'active',
-}
-
-/** Le message d'alerte lie a l'expiration du token, ou null si tout va bien. */
-function expiryWarning(account: Account): { text: string; bad: boolean } | null {
-  const days = daysUntilExpiry(account.token_expiry)
-  if (days === null) return null
-  if (days < 0) return { text: 'Token expire', bad: true }
-  if (days <= 3) return { text: `Token expire dans ${days} j`, bad: true }
-  if (days <= 10) return { text: `Token expire dans ${days} j`, bad: false }
-  return null
 }
 
 function statusLabel(status: string): string {
@@ -176,7 +166,7 @@ export default function Accounts() {
               </h2>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {list.map((account) => {
-                  const warning = expiryWarning(account)
+                  const etatToken = decrireToken(account)
                   return (
                     <article key={account.id} className="panel p-4">
                       <div className="flex items-start justify-between gap-2">
@@ -194,14 +184,17 @@ export default function Accounts() {
                         </Chip>
                       </div>
 
-                      {!account.access_token && (
-                        <p className="mt-3 text-xs text-warn-400">Aucun token enregistre</p>
-                      )}
-                      {warning && (
+                      {etatToken && (
                         <p
-                          className={`mt-3 text-xs ${warning.bad ? 'text-bad-400' : 'text-warn-400'}`}
+                          className={`mt-3 text-xs ${
+                            etatToken.ton === 'bad'
+                              ? 'text-bad-400'
+                              : etatToken.ton === 'warn'
+                                ? 'text-warn-400'
+                                : 'text-mist-500'
+                          }`}
                         >
-                          {warning.text}
+                          {etatToken.texte}
                         </p>
                       )}
 
