@@ -12,6 +12,7 @@ import { formatDateTime, formatDay, dayKey } from '../lib/format'
 import { Alert, EmptyState, Loading, PageHeader } from '../components/ui'
 import { BadgeStatut, LigneAttente, ProchainePublication } from '../components/Attente'
 import { useLiveStatuses } from '../lib/useLiveStatuses'
+import { useScheduler } from '../lib/scheduler'
 
 function Stat({
   label,
@@ -35,6 +36,7 @@ export default function Dashboard() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { intervalleMinutes } = useScheduler()
 
   useEffect(() => {
     Promise.all([listPosts(), listAccounts()])
@@ -113,7 +115,7 @@ export default function Dashboard() {
     <div>
       <PageHeader
         title="Dashboard"
-        subtitle="Le scheduler tourne tout seul, toutes les 5 minutes"
+        subtitle={`Le scheduler tourne tout seul, toutes les ${intervalleMinutes} minutes`}
         action={
           <Link to="/posts" className="btn btn-primary">
             Nouvelle publication

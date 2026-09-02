@@ -4,6 +4,7 @@ import { listAccounts, setupStatus, type SetupStatus } from '../lib/api'
 import { friendlyError } from '../lib/errors'
 import { PLATFORMS, PLATFORM_ICON, type Account } from '../lib/types'
 import { Alert, Loading, PageHeader } from '../components/ui'
+import { useScheduler } from '../lib/scheduler'
 
 /** Une ligne de la liste de controle : fait, ou pas encore. */
 function Check({ done, label, hint }: { done: boolean; label: string; hint?: string }) {
@@ -106,6 +107,7 @@ export default function Guide() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
+  const { intervalleMinutes } = useScheduler()
 
   useEffect(() => {
     Promise.all([setupStatus(), listAccounts()])
@@ -141,7 +143,10 @@ export default function Guide() {
         <h2 className="mb-4 font-semibold">Ou tu en es</h2>
         <ul className="space-y-3">
           <Check done label="L'application est en ligne et tu es connecte" />
-          <Check done label="Le scheduler tourne automatiquement, toutes les 5 minutes" />
+          <Check
+            done
+            label={`Le scheduler tourne automatiquement, toutes les ${intervalleMinutes} minutes`}
+          />
           <Check
             done={Boolean(status?.anthropic)}
             label="Cle API Claude, pour ecrire les legendes toutes seules"

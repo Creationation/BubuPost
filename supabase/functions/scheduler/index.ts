@@ -22,6 +22,15 @@ const BATCH_SIZE = 10
 const POLL_ATTEMPTS = 10
 const POLL_DELAY_MS = 5000
 
+/**
+ * Duree du bail pose sur une publication pendant qu'on la traite.
+ *
+ * Assez long pour couvrir l'envoi d'une grosse video, assez court pour qu'une
+ * fonction interrompue en plein travail ne bloque pas la publication pour la
+ * journee. Au-dela, un autre passage la reprendra.
+ */
+const BAIL_MINUTES = 10
+
 type Post = {
   id: string
   account_id: string
@@ -103,6 +112,37 @@ async function publishedLast24h(db: SupabaseClient, accountId: string): Promise<
   return count ?? 0
 }
 
+/**
+ * Reserve une publication pour ce passage, ou renonce.
+ *
+ * Sans ca, deux passages qui se chevauchent traiteraient la meme publication :
+ * le premier envoie la video, le second, lance pendant ce temps, la voit encore
+ * en attente et l'envoie une deuxieme fois. Le compte recevrait deux fois la
+ * meme video. Le risque etait deja la a 5 minutes, il devient courant a 2.
+ *
+ * L'ecriture conditionnelle sert de verrou : Postgres reevalue la condition
+ * apres avoir verrouille la ligne, donc un seul passage peut gagner. Le bail
+ * inscrit dans next_attempt_at libere la publication si le passage meurt.
+ */
+async function reserver(db: SupabaseClient, post: Post): Promise<boolean> {
+  const maintenant = new Date().toISOString()
+  const bail = new Date(Date.now() + BAIL_MINUTES * 60_000).toISOString()
+
+  const { data, error } = await db
+    .from('posts')
+    .update({ next_attempt_at: bail })
+    .eq('id', post.id)
+    .in('status', ['pending', 'processing'])
+    .or(`next_attempt_at.is.null,next_attempt_at.lte.${maintenant}`)
+    .select('id')
+
+  if (error) {
+    console.error('Reservation impossible', post.id, error.message)
+    return false
+  }
+  return (data ?? []).length > 0
+}
+
 async function handleFailure(
   db: SupabaseClient,
   post: Post,
@@ -166,6 +206,11 @@ async function processPost(
 ): Promise<string> {
   const account = post.accounts
 
+  // Verrou d'abord : tout ce qui suit ecrit en base ou appelle une plateforme.
+  if (!(await reserver(db, post))) {
+    return 'deja pris par un autre passage'
+  }
+
   if (account.status !== 'active') {
     const raison =
       account.status === 'paused'
@@ -201,6 +246,7 @@ async function processPost(
   const used = await publishedLast24h(db, account.id)
   if (used >= limit) {
     // On ne marque pas en echec : on repousse d'une heure, le quota se libere tout seul.
+    // On remplace le bail par le vrai delai d'attente du quota.
     await db
       .from('posts')
       .update({ next_attempt_at: new Date(Date.now() + 3600_000).toISOString() })

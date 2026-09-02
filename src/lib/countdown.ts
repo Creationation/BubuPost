@@ -56,8 +56,8 @@ export function formatDuree(secondes: number): string {
   return `${jours} j ${heures % 24} h`
 }
 
-/** Le cron tourne toutes les 5 minutes. */
-const CYCLE_S = 300
+/** Cadence de repli, si le serveur n'a pas encore repondu. */
+const CYCLE_DEFAUT_S = 300
 
 /**
  * Secondes avant le prochain passage du scheduler, a partir du dernier passage
@@ -74,15 +74,17 @@ const CYCLE_S = 300
 export function secondesAvantPassage(
   maintenantMs: number,
   dernierPassageMs: number | null,
+  cycleSecondes: number = CYCLE_DEFAUT_S,
 ): number | null {
   if (!dernierPassageMs) return null
 
+  const cycle = cycleSecondes > 0 ? cycleSecondes : CYCLE_DEFAUT_S
   const ecoule = (maintenantMs - dernierPassageMs) / 1000
 
   // Passage manque ou horloges decalees : on ne bricole pas un chiffre.
-  if (ecoule < 0 || ecoule > CYCLE_S * 3) return null
+  if (ecoule < 0 || ecoule > cycle * 3) return null
 
-  return Math.max(0, Math.round(CYCLE_S - ecoule))
+  return Math.max(0, Math.round(cycle - ecoule))
 }
 
 export type PhaseAttente = 'lointain' | 'proche' | 'file' | 'traitement' | 'aucune'
@@ -109,6 +111,7 @@ export function decrireAttente(
   status: string,
   maintenantMs: number,
   dernierPassageMs: number | null = null,
+  cycleSecondes: number = CYCLE_DEFAUT_S,
 ): EtatAttente {
   // Le scheduler a pris la publication en charge : plus aucun compte a
   // rebours, le travail a commence.
@@ -147,7 +150,7 @@ export function decrireAttente(
 
   // L'heure est passee, le scheduler n'est pas encore venu : on annonce son
   // prochain passage reel, ou rien du tout si on ne le connait pas.
-  const avant = secondesAvantPassage(maintenantMs, dernierPassageMs)
+  const avant = secondesAvantPassage(maintenantMs, dernierPassageMs, cycleSecondes)
 
   if (avant === null) {
     return {
