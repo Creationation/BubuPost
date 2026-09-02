@@ -11,6 +11,11 @@ import { corsHeaders, json } from '../_shared/cors.ts'
 import { TikTokOAuthError, explain, rafraichir } from '../_shared/tiktok-oauth.ts'
 import { messageTokenExpire, notifyTelegram } from '../_shared/notify.ts'
 import {
+  YouTubeError,
+  explain as expliquerYoutube,
+  rafraichir as rafraichirYoutube,
+} from '../_shared/youtube-oauth.ts'
+import {
   MetaError,
   explain as expliquerMeta,
   expirationReelle,
@@ -203,8 +208,76 @@ async function renouvelerMeta(db: SupabaseClient, compte: Compte): Promise<strin
   }
 }
 
+/**
+ * YouTube : l'access token ne vit qu'une heure, le refresh token le regenere.
+ *
+ * Attention, en mode Test sur l'ecran de consentement Google, les refresh
+ * tokens meurent au bout de 7 jours. Le message doit le dire, sinon on cherche
+ * une panne la ou il n'y a qu'une limite connue de Google.
+ */
+async function renouvelerYoutube(db: SupabaseClient, compte: Compte): Promise<string> {
+  if (!compte.refresh_token) {
+    await db.from('accounts').update({ status: 'expired' }).eq('id', compte.id)
+    await notifyTelegram(
+      messageTokenExpire({
+        platform: compte.platform,
+        accountName: compte.account_name,
+        brand: compte.brand,
+        reason:
+          "Aucun jeton de renouvellement enregistre. La connexion doit demander access_type=offline et prompt=consent.",
+      }),
+      db,
+    )
+    return 'sans refresh token'
+  }
+
+  try {
+    const jetons = await rafraichirYoutube(compte.refresh_token)
+    const expiry = jetons.expiresIn
+      ? new Date(Date.now() + jetons.expiresIn * 1000).toISOString()
+      : null
+
+    const { error } = await db
+      .from('accounts')
+      .update({
+        access_token: jetons.accessToken,
+        // Google ne renvoie pas de nouveau refresh token : on garde l'ancien.
+        refresh_token: jetons.refreshToken ?? compte.refresh_token,
+        token_expiry: expiry,
+        status: 'active',
+      })
+      .eq('id', compte.id)
+
+    if (error) {
+      console.error(`${compte.account_name} : ecriture impossible`, error.message)
+      return `echec ecriture : ${error.message}`
+    }
+
+    console.log(`${compte.account_name} : jeton YouTube renouvele jusqu'a ${expiry}`)
+    return 'renouvele'
+  } catch (err) {
+    const e = err instanceof YouTubeError ? err : null
+    const raison = e ? expliquerYoutube(e.code, e.message) : String(err)
+
+    await db.from('accounts').update({ status: 'expired' }).eq('id', compte.id)
+    console.error(`${compte.account_name} : renouvellement YouTube en echec`, e?.code, e?.message)
+
+    await notifyTelegram(
+      messageTokenExpire({
+        platform: compte.platform,
+        accountName: compte.account_name,
+        brand: compte.brand,
+        reason: raison,
+      }),
+      db,
+    )
+    return `echec : ${raison}`
+  }
+}
+
 /** Aiguillage par plateforme. */
 function renouveler(db: SupabaseClient, compte: Compte): Promise<string> {
+  if (compte.platform === 'youtube') return renouvelerYoutube(db, compte)
   if (compte.platform === 'instagram' || compte.platform === 'facebook') {
     return renouvelerMeta(db, compte)
   }
@@ -235,7 +308,7 @@ Deno.serve(async (req) => {
   const { data: comptes, error } = await db
     .from('accounts')
     .select('id, platform, account_name, brand, external_account_id, refresh_token, token_expiry, status')
-    .in('platform', ['tiktok', 'instagram', 'facebook'])
+    .in('platform', ['tiktok', 'instagram', 'facebook', 'youtube'])
     .in('status', ['active', 'error', 'expired'])
     .or(`token_expiry.is.null,token_expiry.lte.${limite}`)
 

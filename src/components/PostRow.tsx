@@ -42,7 +42,29 @@ export function PostRow({
               {account?.account_name ?? 'compte supprime'}
             </span>
             {account && <span className="text-xs text-mist-600">{account.brand}</span>}
+            {post.youtube_type && (
+              <span
+                className={`chip ${
+                  post.youtube_type === 'short'
+                    ? 'border-brand-400/30 bg-brand-400/10 text-brand-400'
+                    : 'border-mist-500/30 bg-mist-500/10 text-mist-300'
+                }`}
+                title={
+                  post.youtube_type === 'short'
+                    ? 'Publie en Short, format vertical'
+                    : 'Publie en video classique'
+                }
+              >
+                {post.youtube_type === 'short' ? '▮ Short' : '▭ Video'}
+              </span>
+            )}
           </div>
+
+          {post.title && (
+            <p className="mt-2 truncate text-sm font-medium text-mist-100" title={post.title}>
+              {post.title}
+            </p>
+          )}
 
           <p className="mt-2 line-clamp-2 text-sm text-mist-300">
             {post.caption || <span className="text-mist-600">Aucune legende</span>}

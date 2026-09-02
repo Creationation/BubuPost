@@ -9,6 +9,7 @@ import Admin from './pages/Admin'
 import Guide from './pages/Guide'
 import TikTokCallback from './pages/TikTokCallback'
 import MetaCallback from './pages/MetaCallback'
+import YoutubeCallback from './pages/YoutubeCallback'
 import { Privacy, Terms } from './pages/Legal'
 
 /** Les pages protegees, derriere le login. */
@@ -36,6 +37,7 @@ function Private() {
       </Route>
       <Route path="auth/tiktok/callback" element={<TikTokCallback />} />
       <Route path="auth/meta/callback" element={<MetaCallback />} />
+      <Route path="auth/youtube/callback" element={<YoutubeCallback />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

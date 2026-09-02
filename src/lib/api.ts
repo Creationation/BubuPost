@@ -81,6 +81,10 @@ export type TargetInput = {
   scheduled_at: string
   caption: string
   hashtags: string[]
+  /** YouTube uniquement : un Short et une video longue ne se preparent pas pareil. */
+  youtube_type?: 'short' | 'video' | null
+  title?: string | null
+  thumbnail_url?: string | null
 }
 
 /**
@@ -102,6 +106,9 @@ export async function createPostGroup(
     caption: t.caption || null,
     hashtags: t.hashtags.length ? t.hashtags : null,
     scheduled_at: t.scheduled_at,
+    youtube_type: t.youtube_type ?? null,
+    title: t.title?.trim() || null,
+    thumbnail_url: t.thumbnail_url?.trim() || null,
     status: 'pending',
   }))
   const inserted = unwrap(await supabase.from('posts').insert(rows).select('id'))
@@ -125,7 +132,15 @@ export async function refreshPostStatuses(ids: string[]) {
 
 export async function updatePost(
   id: string,
-  patch: { caption?: string | null; hashtags?: string[] | null; scheduled_at?: string; video_url?: string },
+  patch: {
+    caption?: string | null
+    hashtags?: string[] | null
+    scheduled_at?: string
+    video_url?: string
+    youtube_type?: string | null
+    title?: string | null
+    thumbnail_url?: string | null
+  },
 ): Promise<void> {
   if (typeof patch.caption === 'string') refuserJson(patch.caption, 'modification')
   unwrap(await supabase.from('posts').update(patch).eq('id', id).select('id'))
@@ -205,10 +220,21 @@ export async function uploadVideo(
 // Legendes par l'API Claude
 // ---------------------------------------------------------------------------
 
-export type CaptionResult = { caption: string; hashtags: string[] }
+/** Le titre n existe que pour une video YouTube classique. */
+export type CaptionResult = { caption: string; hashtags: string[]; title?: string | null }
 
-export type CaptionCible = { id: string; platform: string; account_name?: string }
-export type CaptionVariante = { id: string; caption: string; hashtags: string[] }
+export type CaptionCible = {
+  id: string
+  platform: string
+  account_name?: string
+  youtube_type?: 'short' | 'video'
+}
+export type CaptionVariante = {
+  id: string
+  caption: string
+  hashtags: string[]
+  title?: string | null
+}
 
 /**
  * Toutes les variantes en un seul appel.
@@ -255,6 +281,7 @@ export async function generateCaption(input: {
   brand?: string
   language?: string
   tone?: string
+  youtube_type?: 'short' | 'video'
 }): Promise<CaptionResult> {
   const { data, error } = await supabase.functions.invoke<CaptionResult & { error?: string }>(
     'generate-caption',
@@ -262,7 +289,7 @@ export async function generateCaption(input: {
   )
   if (error) throw new Error(errorMessage(error))
   if (!data || data.error) throw new Error(data?.error ?? 'Reponse vide')
-  return { caption: data.caption, hashtags: data.hashtags ?? [] }
+  return { caption: data.caption, hashtags: data.hashtags ?? [], title: data.title ?? null }
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +338,10 @@ export type SetupStatus = {
   /** Public par nature : visible dans l URL d autorisation. */
   meta_app_id?: string | null
   meta_redirect_uri?: string | null
+  youtube?: boolean
+  /** Public par nature : visible dans l URL d autorisation Google. */
+  youtube_client_id?: string | null
+  youtube_redirect_uri?: string | null
 }
 
 /**

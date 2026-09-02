@@ -18,6 +18,10 @@ type Target = {
   caption: string
   hashtags: string
   generating: boolean
+  /** YouTube uniquement. */
+  youtubeType: 'short' | 'video'
+  titre: string
+  miniature: string
 }
 
 /** Dans une heure, arrondi aux 5 minutes superieures. */
@@ -99,6 +103,9 @@ export default function PostComposer({
         caption: '',
         hashtags: '',
         generating: false,
+        youtubeType: 'short',
+        titre: '',
+        miniature: '',
       }
       return next
     })
@@ -132,10 +139,12 @@ export default function PostComposer({
         subject: subject.trim(),
         platform: account.platform,
         brand: account.brand,
+        youtube_type: targets[accountId]?.youtubeType,
       })
       patch(accountId, {
         caption: result.caption,
         hashtags: result.hashtags.join(' '),
+        titre: result.title ?? targets[accountId]?.titre ?? '',
         generating: false,
       })
     } catch (err) {
@@ -168,6 +177,7 @@ export default function PostComposer({
           id,
           platform: accountById[id]?.platform ?? 'instagram',
           account_name: accountById[id]?.account_name,
+          youtube_type: targets[id]?.youtubeType,
         })),
       })
 
@@ -235,12 +245,19 @@ export default function PostComposer({
     setBusy(true)
     setError(null)
     try {
-      const list: TargetInput[] = selected.map((id) => ({
-        account_id: id,
-        scheduled_at: fromLocalInput(targets[id].scheduledLocal),
-        caption: targets[id].caption.trim(),
-        hashtags: parseHashtags(targets[id].hashtags),
-      }))
+      const list: TargetInput[] = selected.map((id) => {
+        const estYoutube = accountById[id]?.platform === 'youtube'
+        return {
+          account_id: id,
+          scheduled_at: fromLocalInput(targets[id].scheduledLocal),
+          caption: targets[id].caption.trim(),
+          hashtags: parseHashtags(targets[id].hashtags),
+          youtube_type: estYoutube ? targets[id].youtubeType : null,
+          title: estYoutube ? targets[id].titre : null,
+          thumbnail_url:
+            estYoutube && targets[id].youtubeType === 'video' ? targets[id].miniature : null,
+        }
+      })
       const { count } = await createPostGroup(videoUrl.trim(), list)
       onCreated(count)
     } catch (err) {
@@ -416,6 +433,67 @@ export default function PostComposer({
                       </button>
                     </div>
 
+                    {account.platform === 'youtube' && (
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
+                        {(['short', 'video'] as const).map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => patch(id, { youtubeType: t })}
+                            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                              target.youtubeType === t
+                                ? 'border-brand-500/50 bg-brand-500/15 text-mist-100'
+                                : 'border-ink-700 text-mist-500 hover:border-ink-600'
+                            }`}
+                          >
+                            {t === 'short' ? 'Short, vertical' : 'Video classique'}
+                          </button>
+                        ))}
+                        <span className="text-xs text-mist-600">
+                          {target.youtubeType === 'short'
+                            ? '#Shorts est ajoute automatiquement, titre tire de la legende'
+                            : 'Titre, description et miniature separes'}
+                        </span>
+                      </div>
+                    )}
+
+                    {account.platform === 'youtube' && target.youtubeType === 'video' && (
+                      <div className="mb-3 space-y-3">
+                        <div>
+                          <label className="label" htmlFor={`titre-${id}`}>
+                            Titre de la video
+                          </label>
+                          <input
+                            id={`titre-${id}`}
+                            className="field"
+                            maxLength={100}
+                            value={target.titre}
+                            onChange={(e) => patch(id, { titre: e.target.value })}
+                            placeholder="Ce que les gens tapent dans la recherche YouTube"
+                          />
+                          <p className="mt-1 text-xs text-mist-600">
+                            {target.titre.length} sur 100 caracteres
+                          </p>
+                        </div>
+                        <div>
+                          <label className="label" htmlFor={`miniature-${id}`}>
+                            Miniature personnalisee
+                          </label>
+                          <input
+                            id={`miniature-${id}`}
+                            className="field font-mono text-xs"
+                            value={target.miniature}
+                            onChange={(e) => patch(id, { miniature: e.target.value })}
+                            placeholder="https://... (optionnel)"
+                          />
+                          <p className="mt-1 text-xs text-mist-600">
+                            Optionnelle, et elle coute 50 unites de quota en plus des 1600 de
+                            l'envoi.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="grid gap-3 lg:grid-cols-[220px_1fr]">
                       <div>
                         <label className="label" htmlFor={`when-${id}`}>
@@ -433,7 +511,9 @@ export default function PostComposer({
                       <div className="space-y-3">
                         <div>
                           <label className="label" htmlFor={`caption-${id}`}>
-                            Legende
+                            {account.platform === 'youtube' && target.youtubeType === 'video'
+                              ? 'Description'
+                              : 'Legende'}
                           </label>
                           <textarea
                             id={`caption-${id}`}

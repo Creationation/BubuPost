@@ -22,6 +22,8 @@ const PLATFORM_BRIEF: Record<string, string> = {
     'Threads. Ton conversationnel, comme un message a des gens qui suivent deja. Une a trois lignes, 0 a 2 hashtags.',
   youtube:
     'YouTube Shorts. La premiere ligne sert de titre et doit faire moins de 100 caracteres. Ensuite deux a quatre lignes de description. 3 a 5 hashtags.',
+  youtube_video:
+    "YouTube, video classique au format long. Exercice different d'une legende : le titre doit etre optimise pour la RECHERCHE YouTube, donc contenir les mots que les gens tapent reellement, sans point d'exclamation ni majuscules inutiles, 60 a 70 caracteres pour ne pas etre tronque. La description est structuree : deux ou trois phrases qui donnent envie et reprennent les mots-cles des les premieres lignes, puis un court sommaire de ce que la video couvre. 5 a 8 tags.",
   tiktok:
     'TikTok. Tres court, une a deux lignes, accrocheur des le premier mot, ton natif de la plateforme. 3 a 5 hashtags courts.',
 }
@@ -38,7 +40,12 @@ const SYSTEM_SIMPLE = `Tu ecris des legendes pour des videos courtes publiees su
 ${REGLES}
 
 Tu reponds uniquement par un objet JSON valide, sans bloc de code autour, de la forme :
-{"caption": "le texte de la legende", "hashtags": ["motcle", "autremotcle"]}
+{"caption": "le texte", "hashtags": ["motcle"], "title": "titre ou chaine vide"}
+
+Le champ title n'est rempli QUE pour une video YouTube classique. Dans ce cas il porte le titre
+optimise pour la recherche, et caption ne contient QUE la description, sans repeter le titre.
+Partout ailleurs, title vaut une chaine vide.
+
 Les hashtags sont donnes sans le caractere #.`
 
 const SYSTEM_LOT = `Tu ecris des legendes pour une meme video, publiee sur plusieurs comptes de reseaux sociaux.
@@ -56,11 +63,18 @@ qui est exactement ce qu'on veut eviter.
 Varie egalement les hashtags d'un texte a l'autre, tout en restant pertinent.
 
 Tu reponds uniquement par un tableau JSON valide, sans bloc de code autour, de la forme :
-[{"id": "identifiant fourni", "caption": "le texte", "hashtags": ["motcle"]}]
+[{"id": "identifiant fourni", "caption": "le texte", "hashtags": ["motcle"], "title": "titre ou chaine vide"}]
+Le champ title n'est rempli QUE pour une video YouTube classique, ou caption ne contient alors
+que la description, sans repeter le titre. Vide partout ailleurs.
 Un objet par cible demandee, dans le meme ordre, avec l'identifiant exactement tel qu'il est
 fourni. Les hashtags sont donnes sans le caractere #.`
 
-type Cible = { id: string; platform: string; account_name?: string }
+type Cible = {
+  id: string
+  platform: string
+  account_name?: string
+  youtube_type?: 'short' | 'video'
+}
 
 type Body = {
   subject?: string
@@ -68,6 +82,7 @@ type Body = {
   brand?: string
   language?: string
   tone?: string
+  youtube_type?: 'short' | 'video'
   /** Mode lot : une variante distincte par cible. */
   targets?: Cible[]
 }
@@ -80,6 +95,13 @@ type Body = {
  * hashtags. On en tirait le tableau ["a"], donc un objet sans champ caption,
  * et le repli renvoyait le JSON entier comme legende.
  */
+/** Le brief a suivre : un Short et une video longue n ont rien a voir. */
+function brief(platform: string, youtubeType?: string): string {
+  const p = (platform ?? '').toLowerCase()
+  if (p === 'youtube' && youtubeType === 'video') return PLATFORM_BRIEF.youtube_video
+  return PLATFORM_BRIEF[p] ?? PLATFORM_BRIEF.instagram
+}
+
 function extraireJson(texte: string, forme: 'objet' | 'tableau'): unknown {
   const [ouvre, ferme] = forme === 'tableau' ? ['[', ']'] : ['{', '}']
 
@@ -165,14 +187,13 @@ Deno.serve(async (req) => {
         '',
         `Ecris ${cibles.length} textes differents, un par cible ci-dessous :`,
         ...cibles.map((c, i) => {
-          const brief = PLATFORM_BRIEF[c.platform?.toLowerCase()] ?? PLATFORM_BRIEF.instagram
           const nom = c.account_name ? ` (compte ${c.account_name})` : ''
-          return `${i + 1}. id="${c.id}"${nom} — ${brief}`
+          return `${i + 1}. id="${c.id}"${nom} : ${brief(c.platform, c.youtube_type)}`
         }),
       ].join('\n')
     : [
         ...contexte,
-        `Plateforme : ${PLATFORM_BRIEF[(body.platform ?? 'instagram').toLowerCase()] ?? PLATFORM_BRIEF.instagram}`,
+        `Plateforme : ${brief(body.platform ?? 'instagram', body.youtube_type)}`,
       ].join('\n')
 
   const client = new Anthropic({ apiKey })
@@ -208,7 +229,10 @@ Deno.serve(async (req) => {
 
     if (enLot) {
       const liste = Array.isArray(parse) ? parse : []
-      const parId = new Map<string, { caption: string; hashtags: string[] }>()
+      const parId = new Map<
+        string,
+        { caption: string; hashtags: string[]; title: string | null }
+      >()
 
       for (const item of liste as Array<Record<string, unknown>>) {
         const id = String(item?.id ?? '')
@@ -218,7 +242,11 @@ Deno.serve(async (req) => {
           console.error('Legende rejetee, elle ressemble a du JSON', id, caption.slice(0, 120))
           continue
         }
-        parId.set(id, { caption, hashtags: normaliserHashtags(item.hashtags) })
+        parId.set(id, {
+          caption,
+          hashtags: normaliserHashtags(item.hashtags),
+          title: nettoyer(item.title as string) || null,
+        })
       }
 
       // On renvoie une entree par cible demandee, meme si le modele en a
@@ -228,6 +256,7 @@ Deno.serve(async (req) => {
         id: c.id,
         caption: parId.get(c.id)?.caption ?? '',
         hashtags: parId.get(c.id)?.hashtags ?? [],
+        title: parId.get(c.id)?.title ?? null,
       }))
 
       const manquants = resultats.filter((r) => !r.caption).length
@@ -253,6 +282,7 @@ Deno.serve(async (req) => {
     return json({
       caption,
       hashtags: normaliserHashtags(objet.hashtags),
+      title: nettoyer(objet.title as string) || null,
       model: response.model,
       usage,
     })

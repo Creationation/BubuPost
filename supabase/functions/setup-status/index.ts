@@ -37,6 +37,14 @@ Deno.serve(async (req) => {
     meta_redirect_uri:
       Deno.env.get('META_REDIRECT_URI') ?? 'https://bubu-post.vercel.app/auth/meta/callback',
 
+    youtube: has('YOUTUBE_CLIENT_ID') && has('YOUTUBE_CLIENT_SECRET'),
+
+    // L'identifiant Google est public : il apparait en clair dans l'URL
+    // d'autorisation. Le secret, lui, ne sort jamais d'ici.
+    youtube_client_id: Deno.env.get('YOUTUBE_CLIENT_ID')?.trim() ?? null,
+    youtube_redirect_uri:
+      Deno.env.get('YOUTUBE_REDIRECT_URI') ?? 'https://bubu-post.vercel.app/auth/youtube/callback',
+
     tiktok_redirect_uri:
       Deno.env.get('TIKTOK_REDIRECT_URI') ?? 'https://bubu-post.vercel.app/auth/tiktok/callback',
   })

@@ -366,35 +366,47 @@ export default function Guide() {
           onToggle={() => toggle('youtube')}
         >
           <p className="mb-4 text-sm text-mist-300">
-            YouTube marche autrement : le token ne dure qu'une heure, mais le "refresh token" ne
-            perime pas. L'application s'en sert pour en regenerer un a chaque publication. Une fois
-            branche, tu n'y touches plus jamais.
+            Connexion automatisee, comme TikTok. Tu peux publier des Shorts et des videos
+            classiques : le choix se fait publication par publication.
           </p>
           <ol className="space-y-3">
             <Step n={1}>
-              Sur <Ext href="https://console.cloud.google.com">console.cloud.google.com</Ext>, cree
-              un projet et active "YouTube Data API v3".
+              Onglet Comptes, bouton{' '}
+              <strong className="text-mist-100">Connecter une chaine YouTube</strong>. Google te
+              demande d'autoriser l'envoi de videos, et la chaine s'enregistre toute seule.
             </Step>
             <Step n={2}>
-              Ecran de consentement OAuth : type Externe, et ajoute-toi comme utilisateur de test.
+              Si ton compte Google gere plusieurs chaines, l'application te les affiche et te
+              laisse choisir.
             </Step>
             <Step n={3}>
-              Cree des identifiants OAuth de type "Desktop app". Note le Client ID et le Client
-              Secret, et donne-les moi : ce sont des secrets serveur, ils ne se collent pas dans
-              l'application.
+              Dans une nouvelle publication, un compte YouTube affiche un choix{' '}
+              <strong className="text-mist-100">Short</strong> ou{' '}
+              <strong className="text-mist-100">Video classique</strong>. Le Short recoit{' '}
+              <Code>#Shorts</Code> automatiquement et son titre vient de la legende. La video
+              classique ouvre un titre, une description et une miniature separes.
             </Step>
             <Step n={4}>
-              Sur{' '}
-              <Ext href="https://developers.google.com/oauthplayground">l'OAuth Playground</Ext>,
-              coche "Use your own OAuth credentials", colle tes identifiants, choisis les scopes{' '}
-              <Code>youtube.upload</Code> et <Code>youtube</Code>, autorise, puis echange le code
-              contre des tokens.
-            </Step>
-            <Step n={5}>
-              Copie le refresh token, il commence par <Code>1//</Code>. Onglet Comptes, plateforme
-              YouTube : colle-le dans "Refresh token" et laisse les autres champs vides.
+              Pour une video classique, le bouton de generation ecrit un titre optimise pour la
+              recherche YouTube, ce qui est un exercice different d'une legende Instagram.
             </Step>
           </ol>
+
+          <p className="mt-4 rounded-lg border border-warn-600/40 bg-warn-600/10 px-3 py-2 text-xs text-warn-400">
+            <strong>Quota, le point le plus contraignant.</strong> Google alloue 10 000 unites par
+            jour et un envoi en coute 1600, soit <strong>6 videos par jour maximum</strong>, toutes
+            chaines confondues : le quota appartient au projet Google, pas a la chaine. Une
+            miniature coute 50 unites de plus. L'application compte, bloque proprement avant
+            d'appeler Google, et te previent sur Telegram quand tu approches de la limite. Le
+            compteur repart a zero a minuit, heure du Pacifique.
+          </p>
+
+          <p className="mt-3 rounded-lg border border-ink-700 bg-ink-850/50 px-3 py-2 text-xs text-mist-500">
+            Tant que ton ecran de consentement Google reste en mode Test, les autorisations
+            expirent au bout de 7 jours. L'application te le dira clairement le moment venu, il
+            suffira de reconnecter la chaine. Passer l'application en production supprime cette
+            limite.
+          </p>
         </Panel>
 
         <Panel

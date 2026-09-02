@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { useLocation } from 'react-router-dom'
 import { buildTikTokAuthUrl } from '../lib/tiktok'
 import { buildMetaAuthUrl } from '../lib/meta'
+import { buildYoutubeAuthUrl } from '../lib/youtube'
 import {
   checkAccount,
   createAccount,
@@ -53,7 +54,7 @@ export default function Accounts() {
   const [checks, setChecks] = useState<Record<string, AccountCheck>>({})
   const [testing, setTesting] = useState<string | null>(null)
 
-  const [connecting, setConnecting] = useState<'tiktok' | 'instagram' | null>(null)
+  const [connecting, setConnecting] = useState<'tiktok' | 'instagram' | 'youtube' | null>(null)
 
   // Message rapporte par la page de retour TikTok apres une connexion reussie.
   const location = useLocation()
@@ -129,6 +130,9 @@ export default function Accounts() {
             </button>
             <button className="btn btn-ghost" onClick={() => setConnecting('tiktok')}>
               Connecter un compte TikTok
+            </button>
+            <button className="btn btn-ghost" onClick={() => setConnecting('youtube')}>
+              Connecter une chaine YouTube
             </button>
             <button className="btn btn-primary" onClick={() => setCreating(true)}>
               Ajouter un compte
@@ -267,7 +271,7 @@ export default function Accounts() {
   )
 }
 
-type Plateforme = 'tiktok' | 'instagram'
+type Plateforme = 'tiktok' | 'instagram' | 'youtube'
 
 const CONNEXIONS: Record<
   Plateforme,
@@ -286,6 +290,13 @@ const CONNEXIONS: Record<
     intro:
       "Facebook va te demander d'autoriser BubuPost, puis te ramenera ici. Choisis bien la Page liee a ton compte Instagram professionnel : c'est elle qui donne le droit de publier.",
     construire: buildMetaAuthUrl,
+  },
+  youtube: {
+    titre: 'Connecter une chaine YouTube',
+    bouton: 'Continuer vers Google',
+    intro:
+      "Google va te demander d'autoriser BubuPost a envoyer des videos sur ta chaine, puis te ramenera ici. Rien a copier.",
+    construire: buildYoutubeAuthUrl,
   },
 }
 

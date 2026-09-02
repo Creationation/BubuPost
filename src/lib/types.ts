@@ -85,7 +85,7 @@ export function daysUntilExpiry(expiry: string | null): number | null {
  * Pour celles-ci, une echeance proche est le fonctionnement normal, pas une
  * alerte : un token TikTok ne vit que 24 h par construction.
  */
-export const RENOUVELLEMENT_AUTO = new Set(['tiktok', 'instagram', 'facebook'])
+export const RENOUVELLEMENT_AUTO = new Set(['tiktok', 'instagram', 'facebook', 'youtube'])
 
 /** « 3 h », « 12 j », « 2 mois ». Jamais « 0 j », qui ne veut rien dire. */
 function dureeLisible(ms: number): string {

@@ -41,6 +41,9 @@ type Post = {
   status: string
   attempts: number
   container_id: string | null
+  youtube_type: string | null
+  title: string | null
+  thumbnail_url: string | null
   accounts: Account
 }
 
@@ -48,12 +51,24 @@ type Settings = {
   retry: { max_attempts: number; backoff_minutes: number[] }
   limits: Record<string, number>
   notify: { telegram_enabled: boolean; notify_on_success: boolean }
+  quotaYoutube: {
+    quota_journalier: number
+    cout_envoi: number
+    cout_miniature: number
+    seuil_alerte: number
+  }
 }
 
 const DEFAULTS: Settings = {
   retry: { max_attempts: 3, backoff_minutes: [5, 20, 60] },
   limits: { instagram: 25, facebook: 25, threads: 250, youtube: 6, tiktok: 15 },
   notify: { telegram_enabled: true, notify_on_success: false },
+  quotaYoutube: {
+    quota_journalier: 10000,
+    cout_envoi: 1600,
+    cout_miniature: 50,
+    seuil_alerte: 0.8,
+  },
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -78,6 +93,9 @@ async function loadSettings(db: SupabaseClient): Promise<Settings> {
     if (row.key === 'retry') out.retry = { ...DEFAULTS.retry, ...row.value }
     if (row.key === 'limits') out.limits = { ...DEFAULTS.limits, ...row.value }
     if (row.key === 'notify') out.notify = { ...DEFAULTS.notify, ...row.value }
+    if (row.key === 'quota_youtube') {
+      out.quotaYoutube = { ...DEFAULTS.quotaYoutube, ...row.value }
+    }
   }
   return out
 }
@@ -98,6 +116,32 @@ function buildCaption(post: Post): string {
     .map((t) => (t.startsWith('#') ? t : `#${t}`))
     .join(' ')
   return tags ? `${caption}\n\n${tags}`.trim() : caption
+}
+
+/**
+ * YouTube a besoin de plus qu'une legende : un titre distinct, une
+ * description, des tags, un niveau de confidentialite, parfois une miniature.
+ * L'interface commune des adapters ne transmet qu'une chaine, on y prefixe
+ * donc un bloc structure, separe par un marqueur.
+ */
+function buildYoutubePayload(post: Post): string {
+  const legende = (post.caption ?? '').trim()
+  const type = post.youtube_type === 'video' ? 'video' : 'short'
+
+  // Le titre saisi a la main l'emporte. Sinon on le tire de la legende, ce qui
+  // suffit pour un Short mais serait pauvre pour une video longue.
+  const titre = (post.title ?? '').trim()
+
+  const contexte = {
+    type,
+    titre: titre || legende.split('\n')[0].slice(0, 100) || 'Nouvelle video',
+    description: legende,
+    tags: post.hashtags ?? [],
+    confidentialite: 'public',
+    miniature: type === 'video' ? post.thumbnail_url : null,
+  }
+
+  return `${JSON.stringify(contexte)}\n---BUBUPOST---\n${legende}`
 }
 
 /** Combien de publications reussies sur ce compte dans les 24 dernieres heures. */
@@ -268,6 +312,69 @@ async function processPost(
     return 'quota atteint'
   }
 
+  // Le quota YouTube appartient au projet Google, pas a la chaine : trois
+  // chaines se partagent les memes 10 000 unites par jour. Le verifier ici
+  // evite une erreur brute de Google en plein milieu de la journee.
+  if (account.platform === 'youtube') {
+    const q = settings.quotaYoutube
+    const cout = q.cout_envoi + (post.thumbnail_url && post.youtube_type === 'video' ? q.cout_miniature : 0)
+
+    const { data: consomme } = await db.rpc('quota_du_jour', { p_platform: 'youtube' })
+    const dejaUtilise = typeof consomme === 'number' ? consomme : 0
+
+    if (dejaUtilise + cout > q.quota_journalier) {
+      await db
+        .from('posts')
+        .update({
+          status: 'failed',
+          error_message: `Quota YouTube epuise pour aujourd'hui : ${dejaUtilise} unites sur ${q.quota_journalier}, et cet envoi en demande ${cout}. Le quota se remet a zero a minuit, heure du Pacifique.`,
+        })
+        .eq('id', post.id)
+      await log(db, post.id, 'quota_youtube_epuise', {
+        deja_utilise: dejaUtilise,
+        cout,
+        quota: q.quota_journalier,
+      })
+
+      if (settings.notify.telegram_enabled) {
+        await notifyTelegram(
+          messageQuota({
+            platform: 'youtube',
+            accountName: account.account_name,
+            used: dejaUtilise,
+            limit: q.quota_journalier,
+            videoUrl: post.video_url,
+          }),
+          db,
+        )
+      }
+      return 'quota youtube epuise'
+    }
+
+    // On reserve avant d'envoyer : Google facture l'appel meme s'il echoue.
+    const { data: total } = await db.rpc('consommer_quota', {
+      p_platform: 'youtube',
+      p_units: cout,
+    })
+    await log(db, post.id, 'quota_youtube_consomme', { cout, total })
+
+    const seuil = q.quota_journalier * q.seuil_alerte
+    if (typeof total === 'number' && total >= seuil && dejaUtilise < seuil) {
+      await notifyTelegram(
+        [
+          '⚠️ <b>Quota YouTube bientot epuise</b>',
+          '',
+          `${total} unites consommees sur ${q.quota_journalier}.`,
+          `Il reste de quoi envoyer ${Math.floor((q.quota_journalier - total) / q.cout_envoi)} video(s) aujourd'hui.`,
+          '',
+          'Le quota se remet a zero a minuit, heure du Pacifique.',
+          'https://bubu-post.vercel.app/posts',
+        ].join('\n'),
+        db,
+      )
+    }
+  }
+
   const adapter = adapterFor(account.platform)
 
   // Marquer la prise en charge AVANT le moindre appel externe. La creation du
@@ -283,7 +390,11 @@ async function processPost(
     // 1. Creer le conteneur, sauf s'il existe deja d'un passage precedent.
     let containerId = post.container_id
     if (!containerId) {
-      containerId = await adapter.createContainer(account, post.video_url, buildCaption(post))
+      containerId = await adapter.createContainer(
+        account,
+        post.video_url,
+        account.platform === 'youtube' ? buildYoutubePayload(post) : buildCaption(post),
+      )
       await db.from('posts').update({ container_id: containerId }).eq('id', post.id)
       await log(db, post.id, 'container_created', { container_id: containerId })
     }
