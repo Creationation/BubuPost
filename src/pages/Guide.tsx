@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { listAccounts, setupStatus, type SetupStatus } from '../lib/api'
@@ -460,6 +461,88 @@ export default function Guide() {
           </p>
         </Panel>
       </div>
+
+      <section className="panel mt-6 p-5">
+        <h2 className="mb-1 font-semibold">Deposer une video et laisser faire</h2>
+        <p className="mb-4 text-sm text-mist-500">
+          Le watcher est un petit programme qui tourne sur ton PC. Il surveille les dossiers que tu
+          designes, envoie les videos qu il y trouve, et laisse l application ecrire les textes et
+          placer les horaires. Ton PC n a besoin d etre allume qu au moment du depot : la
+          publication, elle, se fait dans le nuage, PC eteint.
+        </p>
+
+        <h3 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wider text-mist-500">
+          Comment nommer tes fichiers
+        </h3>
+        <p className="text-sm text-mist-300">
+          Le nom du fichier porte les informations. Avec la regle de depart, les elements sont
+          separes par un tiret bas, dans cet ordre :
+        </p>
+        <p className="my-3 rounded-lg border border-ink-700 bg-ink-850 px-3 py-2 font-mono text-xs text-mist-100">
+          EdgeSyncFX_stop-loss-trop-serre_fr.mp4
+        </p>
+        <ul className="space-y-1.5 text-sm text-mist-300">
+          <li>
+            <span className="font-medium text-mist-100">EdgeSyncFX</span> : la marque. Elle doit
+            correspondre exactement a celle de tes comptes.
+          </li>
+          <li>
+            <span className="font-medium text-mist-100">stop-loss-trop-serre</span> : le sujet. Les
+            tirets deviennent des espaces, donc ecris la phrase avec des tirets entre les mots.
+          </li>
+          <li>
+            <span className="font-medium text-mist-100">fr</span> : la langue, en deux lettres.
+          </li>
+        </ul>
+        <p className="mt-3 text-sm text-mist-500">
+          Tu peux changer le separateur, l ordre et les elements dans{' '}
+          <Link to="/automatisation" className="text-brand-400 hover:underline">
+            Automatisation, onglet Nommage
+          </Link>
+          , et surtout tester un nom avant de deposer quoi que ce soit. Si un dossier est dedie a
+          une marque, tu peux omettre la marque dans le nom.
+        </p>
+        <p className="mt-2 text-sm text-mist-500">
+          Un nom qui ne suit pas la regle ne fait rien perdre : le fichier reste ou il est, apparait
+          dans le suivi avec la raison, et tu le rejoues apres l avoir renomme.
+        </p>
+
+        <h3 className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wider text-mist-500">
+          Installer le watcher, une seule fois
+        </h3>
+        <ol className="space-y-3">
+          <Step n={1}>
+            Ouvre le dossier <Code>C:\BubuPost\watcher</Code>.
+          </Step>
+          <Step n={2}>
+            Copie le fichier <Code>config.exemple.json</Code> et renomme la copie en{' '}
+            <Code>config.json</Code>.
+          </Step>
+          <Step n={3}>
+            Ouvre <Code>config.json</Code> avec le Bloc-notes et remplace la ligne du jeton par
+            celui qui est ecrit dans <Code>BUBUPOST - ACCES.txt</Code> sur ton bureau. Enregistre.
+          </Step>
+          <Step n={4}>
+            Dans l application, onglet Automatisation, ajoute le ou les dossiers a surveiller, puis
+            clique sur <span className="text-mist-100">Activer l automatisation</span>.
+          </Step>
+          <Step n={5}>
+            Double-clique sur <Code>demarrer.bat</Code>. Une fenetre noire s ouvre et reste
+            ouverte : c est normal, c est le watcher qui tourne. La fermer l arrete.
+          </Step>
+          <Step n={6}>
+            Pour qu il demarre tout seul avec Windows : appuie sur la touche Windows plus R, tape{' '}
+            <Code>shell:startup</Code>, valide, et glisse un raccourci de{' '}
+            <Code>demarrer.bat</Code> dans le dossier qui s ouvre.
+          </Step>
+        </ol>
+
+        <p className="mt-4 text-sm text-mist-500">
+          L onglet Automatisation te dit quand le watcher s est manifeste pour la derniere fois, ce
+          qu il a traite, et ce qu il a refuse. S il se tait plus longtemps que prevu, un bandeau
+          rouge apparait.
+        </p>
+      </section>
 
       <section className="panel mt-6 p-5">
         <h2 className="mb-3 font-semibold">Une fois un compte branche</h2>

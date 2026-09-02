@@ -6,6 +6,7 @@ import {
   listAccounts,
   listPosts,
   retryPost,
+  validerPost,
 } from '../lib/api'
 import { friendlyError } from '../lib/errors'
 import { PLATFORMS, POST_STATUS_LABEL, type Account, type PostWithAccount } from '../lib/types'
@@ -19,7 +20,14 @@ import { LigneCampagne, useCampagnesOuvertes } from '../components/Campagne'
 import Calendrier, { type DemandeDeplacement } from '../components/Calendrier'
 import { QuotaYoutube } from '../components/QuotaYoutube'
 
-const STATUS_FILTERS = ['pending', 'processing', 'published', 'failed', 'cancelled'] as const
+const STATUS_FILTERS = [
+  'a_valider',
+  'pending',
+  'processing',
+  'published',
+  'failed',
+  'cancelled',
+] as const
 
 const MEMOIRE_VUE = 'bubupost.vue-publications'
 
@@ -174,6 +182,7 @@ export default function Posts() {
       onEdit: () => setEditing(post),
       onLogs: () => setShowingLogs(post),
       onCancel: () => void act(() => cancelPost(post.id), 'Publication annulee'),
+      onValider: () => void act(() => validerPost(post.id), 'Publication validee, elle partira a son heure'),
       onRetry: () => void act(() => retryPost(post.id), 'Publication reprogrammee'),
       onDelete: () => setToDelete(post),
     }

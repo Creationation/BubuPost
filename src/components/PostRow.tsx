@@ -40,6 +40,7 @@ export function PostRow({
   onCancel,
   onRetry,
   onDelete,
+  onValider,
 }: {
   post: PostWithAccount
   onEdit: () => void
@@ -47,6 +48,8 @@ export function PostRow({
   onCancel: () => void
   onRetry: () => void
   onDelete: () => void
+  /** Approuve une publication creee automatiquement. */
+  onValider?: () => void
 }) {
   const account = post.accounts
   const editable = isEditable(post.status)
@@ -135,6 +138,11 @@ export function PostRow({
         </div>
 
         <div className="flex shrink-0 flex-wrap gap-2">
+          {post.status === 'a_valider' && onValider && (
+            <button className="btn btn-primary !py-1 !text-xs" onClick={onValider}>
+              Valider
+            </button>
+          )}
           {editable && (
             <button className="btn btn-ghost !py-1 !text-xs" onClick={onEdit}>
               Modifier

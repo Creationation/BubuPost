@@ -11,6 +11,7 @@
 import Anthropic from 'npm:@anthropic-ai/sdk@0.122.0'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders, json } from '../_shared/cors.ts'
+import { jwtRole } from '../_shared/auth.ts'
 import {
   ARBITRAGE,
   blocPour,
@@ -281,10 +282,19 @@ Deno.serve(async (req) => {
 
   // L'autorisation d'abord : un appelant anonyme n'a pas a apprendre quelles
   // cles sont configurees ici, et c'est un appel payant.
+  //
+  // Deux appelants legitimes : Diego depuis l'application, et l'automatisation,
+  // qui genere les textes sans qu'aucun humain soit connecte. Cette seconde
+  // porte n'est ouverte qu'a la cle service_role, qui ne quitte jamais le
+  // serveur : le watcher local ne l'a pas et ne peut pas passer par la.
   const bearer = (req.headers.get('Authorization') ?? '').replace('Bearer ', '').trim()
-  const check = createClient(SUPABASE_URL, ANON_KEY)
-  const { data: userData, error: userErr } = await check.auth.getUser(bearer)
-  if (userErr || !userData.user) return json({ error: 'Non autorise' }, 401)
+  if (!bearer) return json({ error: 'Non autorise' }, 401)
+
+  if (bearer !== SERVICE_KEY && jwtRole(bearer) !== 'service_role') {
+    const check = createClient(SUPABASE_URL, ANON_KEY)
+    const { data: userData, error: userErr } = await check.auth.getUser(bearer)
+    if (userErr || !userData.user) return json({ error: 'Non autorise' }, 401)
+  }
 
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
   if (!apiKey) return json({ error: 'Secret ANTHROPIC_API_KEY absent de la fonction' }, 500)

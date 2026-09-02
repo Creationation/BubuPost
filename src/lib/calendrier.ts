@@ -149,6 +149,9 @@ export function depassements(
 
   for (const post of postsDuJour) {
     if (post.status === 'cancelled' || post.status === 'failed') continue
+    // Une publication a valider ne partira pas tant qu'elle n'est pas
+    // approuvee : elle ne reserve donc aucun quota.
+    if (post.status === 'a_valider') continue
     const platform = post.accounts?.platform
     if (!platform) continue
 
@@ -190,7 +193,12 @@ export function positionDansJour(iso: string): number {
 
 /** Un post est deplacable tant qu'il n'est pas parti. */
 export function deplacable(status: string): boolean {
-  return status === 'pending' || status === 'failed' || status === 'cancelled'
+  return (
+    status === 'a_valider' ||
+    status === 'pending' ||
+    status === 'failed' ||
+    status === 'cancelled'
+  )
 }
 
 /** Pourquoi un post ne peut pas etre deplace, en clair. */

@@ -80,6 +80,24 @@ export type Database = {
         }
         Relationships: []
       }
+      automation_config: {
+        Row: {
+          id: boolean
+          reglages: Json
+          updated_at: string
+        }
+        Insert: {
+          id?: boolean
+          reglages?: Json
+          updated_at?: string
+        }
+        Update: {
+          id?: boolean
+          reglages?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       consignes: {
         Row: {
           cle: string
@@ -98,6 +116,57 @@ export type Database = {
           portee?: string
           reglages?: Json
           updated_at?: string
+        }
+        Relationships: []
+      }
+      imports: {
+        Row: {
+          campaign_id: string | null
+          cle: string
+          created_at: string
+          dossier: string | null
+          fichier: string
+          id: string
+          langue: string | null
+          marque: string | null
+          publications: number
+          raison: string | null
+          statut: string
+          sujet: string | null
+          taille: number | null
+          video_url: string | null
+        }
+        Insert: {
+          campaign_id?: string | null
+          cle: string
+          created_at?: string
+          dossier?: string | null
+          fichier: string
+          id?: string
+          langue?: string | null
+          marque?: string | null
+          publications?: number
+          raison?: string | null
+          statut: string
+          sujet?: string | null
+          taille?: number | null
+          video_url?: string | null
+        }
+        Update: {
+          campaign_id?: string | null
+          cle?: string
+          created_at?: string
+          dossier?: string | null
+          fichier?: string
+          id?: string
+          langue?: string | null
+          marque?: string | null
+          publications?: number
+          raison?: string | null
+          statut?: string
+          sujet?: string | null
+          taille?: number | null
+          video_url?: string | null
         }
         Relationships: []
       }
@@ -277,6 +346,60 @@ export type Database = {
           id?: string
           processed?: number
           started_at?: string
+        }
+        Relationships: []
+      }
+      watch_folders: {
+        Row: {
+          actif: boolean
+          chemin: string
+          created_at: string
+          id: string
+          marque: string | null
+          ordre: number
+          profil: string | null
+        }
+        Insert: {
+          actif?: boolean
+          chemin: string
+          created_at?: string
+          id?: string
+          marque?: string | null
+          ordre?: number
+          profil?: string | null
+        }
+        Update: {
+          actif?: boolean
+          chemin?: string
+          created_at?: string
+          id?: string
+          marque?: string | null
+          ordre?: number
+          profil?: string | null
+        }
+        Relationships: []
+      }
+      watcher_ping: {
+        Row: {
+          detail: Json | null
+          dossiers: number | null
+          id: boolean
+          version: string | null
+          vu_a: string
+        }
+        Insert: {
+          detail?: Json | null
+          dossiers?: number | null
+          id?: boolean
+          version?: string | null
+          vu_a?: string
+        }
+        Update: {
+          detail?: Json | null
+          dossiers?: number | null
+          id?: boolean
+          version?: string | null
+          vu_a?: string
         }
         Relationships: []
       }

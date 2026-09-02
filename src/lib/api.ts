@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import { errorMessage } from './errors'
 import type { Account, PostWithAccount, Profile, PublishLog } from './types'
 import type { LigneConsigne, Probleme } from './consignes'
+import type { ConfigAuto, Dossier, Import } from './automatisation'
 
 /** Toute erreur supabase remonte comme une vraie Error, lisible a l'ecran. */
 function unwrap<T>(res: { data: T | null; error: unknown }): T {
@@ -202,6 +203,49 @@ export async function remplacerVideo(ids: string[], videoUrl: string): Promise<n
     faits++
   }
   return faits
+}
+
+/**
+ * Approuve une publication creee automatiquement.
+ *
+ * Elle passe de 'a_valider' a 'pending' : c'est le seul moment ou le scheduler
+ * commence a la voir. Tant qu'elle n'est pas validee, elle ne peut pas partir.
+ */
+export async function validerPost(id: string): Promise<void> {
+  unwrap(
+    await supabase
+      .from('posts')
+      .update({ status: 'pending' })
+      .eq('id', id)
+      .eq('status', 'a_valider')
+      .select('id'),
+  )
+}
+
+/** Approuve toutes les publications d'une campagne encore a valider. */
+export async function validerCampagne(campaignId: string): Promise<number> {
+  const lignes = unwrap(
+    await supabase
+      .from('posts')
+      .update({ status: 'pending' })
+      .eq('campaign_id', campaignId)
+      .eq('status', 'a_valider')
+      .select('id'),
+  )
+  return lignes.length
+}
+
+/** Rejette une campagne entiere : les publications sont annulees, pas effacees. */
+export async function rejeterCampagne(campaignId: string): Promise<number> {
+  const lignes = unwrap(
+    await supabase
+      .from('posts')
+      .update({ status: 'cancelled' })
+      .eq('campaign_id', campaignId)
+      .eq('status', 'a_valider')
+      .select('id'),
+  )
+  return lignes.length
 }
 
 /** Annule un post encore non publie. */
@@ -597,6 +641,114 @@ export async function testTelegram(): Promise<TelegramTest> {
 }
 
 /** Declenche un passage du scheduler tout de suite, sans attendre le cron. */
+// ---------------------------------------------------------------------------
+// Automatisation
+// ---------------------------------------------------------------------------
+
+export async function lireConfigAuto(): Promise<unknown> {
+  const { data } = await supabase
+    .from('automation_config')
+    .select('reglages')
+    .eq('id', true)
+    .single()
+  return data?.reglages ?? {}
+}
+
+export async function enregistrerConfigAuto(reglages: ConfigAuto): Promise<void> {
+  unwrap(
+    await supabase
+      .from('automation_config')
+      .upsert({ id: true, reglages: reglages as never, updated_at: new Date().toISOString() })
+      .select('id'),
+  )
+}
+
+export async function listerDossiers(): Promise<Dossier[]> {
+  return unwrap(await supabase.from('watch_folders').select('*').order('ordre'))
+}
+
+export type DossierInput = {
+  chemin: string
+  actif: boolean
+  marque: string | null
+  profil: string | null
+  ordre: number
+}
+
+export async function creerDossier(input: DossierInput): Promise<Dossier> {
+  const lignes = unwrap(await supabase.from('watch_folders').insert(input).select())
+  return lignes[0]
+}
+
+export async function majDossier(id: string, input: Partial<DossierInput>): Promise<void> {
+  unwrap(await supabase.from('watch_folders').update(input).eq('id', id).select('id'))
+}
+
+export async function supprimerDossier(id: string): Promise<void> {
+  const { error } = await supabase.from('watch_folders').delete().eq('id', id)
+  if (error) throw new Error(errorMessage(error))
+}
+
+/** Le journal des fichiers vus, du plus recent au plus ancien. */
+export async function listerImports(limite = 40): Promise<Import[]> {
+  return unwrap(
+    await supabase
+      .from('imports')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limite),
+  )
+}
+
+/**
+ * Oublie un fichier rejete, pour que le watcher le reprenne au passage suivant.
+ *
+ * C'est la cle unique du journal qui empeche un second import : l'effacer suffit
+ * a rendre le fichier a nouveau eligible, sans toucher au fichier lui-meme.
+ */
+export async function rejouerImport(id: string): Promise<void> {
+  const { error } = await supabase.from('imports').delete().eq('id', id)
+  if (error) throw new Error(errorMessage(error))
+}
+
+export type SignesDeVie = { vu_a: string | null; version: string | null; dossiers: number | null }
+
+export async function dernierSigneDeVie(): Promise<SignesDeVie | null> {
+  const { data } = await supabase
+    .from('watcher_ping')
+    .select('vu_a, version, dossiers')
+    .eq('id', true)
+    .maybeSingle()
+  return data ?? null
+}
+
+/** Ce que le serveur lit d'un nom de fichier, avec les regles en vigueur. */
+export type LectureNom = {
+  marque: string
+  sujet: string
+  langue: string
+  variante: string
+  conforme: boolean
+  manquants: string[]
+}
+
+/**
+ * Teste un nom de fichier.
+ *
+ * L'analyse est faite par le serveur, celui-la meme qui traitera le vrai
+ * fichier. Refaire la regle cote navigateur donnerait un testeur qui finirait
+ * par ne plus dire la verite.
+ */
+export async function testerNom(fichier: string): Promise<LectureNom> {
+  const { data, error } = await supabase.functions.invoke<{ lecture?: LectureNom; error?: string }>(
+    'watcher',
+    { body: { action: 'tester-nom', fichier } },
+  )
+  if (error) throw new Error(errorMessage(error))
+  if (!data || data.error || !data.lecture) throw new Error(data?.error ?? 'Reponse vide')
+  return data.lecture
+}
+
 export async function runSchedulerNow(): Promise<unknown> {
   const { data, error } = await supabase.functions.invoke('scheduler', { body: {} })
   if (error) throw new Error(errorMessage(error))

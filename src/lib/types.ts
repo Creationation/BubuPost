@@ -11,7 +11,13 @@ export type PostWithAccount = Post & { accounts: Account | null }
 
 export type Platform = 'instagram' | 'facebook' | 'threads' | 'youtube' | 'tiktok'
 export type AccountStatus = 'active' | 'expired' | 'error' | 'paused'
-export type PostStatus = 'pending' | 'processing' | 'published' | 'failed' | 'cancelled'
+export type PostStatus =
+  | 'a_valider'
+  | 'pending'
+  | 'processing'
+  | 'published'
+  | 'failed'
+  | 'cancelled'
 
 export const PLATFORMS: { value: Platform; label: string; icon: string }[] = [
   { value: 'instagram', label: 'Instagram', icon: '◐' },
@@ -37,6 +43,7 @@ export const ACCOUNT_STATUSES: { value: AccountStatus; label: string }[] = [
 ]
 
 export const POST_STATUS_LABEL: Record<string, string> = {
+  a_valider: 'A valider',
   pending: 'En attente',
   processing: 'En cours',
   published: 'Publie',
@@ -45,6 +52,7 @@ export const POST_STATUS_LABEL: Record<string, string> = {
 }
 
 export const POST_STATUS_ICON: Record<string, string> = {
+  a_valider: '◆',
   pending: '⏳',
   processing: '◌',
   published: '✓',
@@ -54,6 +62,7 @@ export const POST_STATUS_ICON: Record<string, string> = {
 
 /** Classes Tailwind de la pastille de statut, une par statut de post. */
 export const POST_STATUS_CLASS: Record<string, string> = {
+  a_valider: 'bg-brand-400/10 text-brand-400 border-brand-400/30',
   pending: 'bg-warn-400/10 text-warn-400 border-warn-400/30',
   processing: 'bg-idle-400/10 text-idle-400 border-idle-400/30',
   published: 'bg-ok-400/10 text-ok-400 border-ok-400/30',
@@ -70,7 +79,7 @@ export const ACCOUNT_STATUS_CLASS: Record<string, string> = {
 
 /** Un post encore modifiable ou annulable. */
 export function isEditable(status: string): boolean {
-  return status === 'pending' || status === 'failed'
+  return status === 'a_valider' || status === 'pending' || status === 'failed'
 }
 
 /** Jours restants avant expiration du token, null si aucune date connue. */

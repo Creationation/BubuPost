@@ -1,0 +1,3 @@
+# Le jeton du watcher ne doit jamais partir sur GitHub.
+config.json
+logs/

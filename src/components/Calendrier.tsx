@@ -30,6 +30,7 @@ import { langue as trouverLangue, langueDe, teinteLangue } from '../lib/langues'
 
 /** Pastille de statut : une couleur, pas de texte, la place est comptee. */
 const PASTILLE: Record<string, string> = {
+  a_valider: 'bg-brand-400',
   pending: 'bg-warn-400',
   processing: 'bg-idle-400',
   published: 'bg-ok-400',

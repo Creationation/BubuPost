@@ -1,0 +1,7 @@
+{
+  "url": "https://ztelymzqhojuxaxryuty.supabase.co",
+  "jeton": "COLLE-ICI-LE-JETON-DU-FICHIER-ACCES.TXT",
+  "intervalleSecondes": 60,
+  "sousDossierTraite": "traite",
+  "echecsAvantAlerte": 3
+}
