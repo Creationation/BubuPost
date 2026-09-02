@@ -12,7 +12,11 @@ export const REDIRECT_URI =
   Deno.env.get('META_REDIRECT_URI') ?? 'https://bubu-post.vercel.app/auth/meta/callback'
 
 export const SCOPES =
-  'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement'
+  
+  // pages_manage_posts et publish_video sont necessaires pour publier des
+  // Reels sur la Page. Les ajouter oblige a refaire l'autorisation : Meta ne
+  // les accorde pas retroactivement aux jetons deja emis.
+  'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,pages_manage_posts,publish_video'
 
 export class MetaError extends Error {
   code: string

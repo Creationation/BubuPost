@@ -4,7 +4,11 @@ import { setupStatus } from './api'
 
 const AUTH_URL = 'https://www.facebook.com/v21.0/dialog/oauth'
 const SCOPES =
-  'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement'
+  
+  // pages_manage_posts et publish_video sont necessaires pour publier des
+  // Reels sur la Page. Les ajouter oblige a refaire l'autorisation : Meta ne
+  // les accorde pas retroactivement aux jetons deja emis.
+  'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,pages_manage_posts,publish_video'
 const CLE_FLOW = 'bubupost.meta.flow'
 const DUREE_MAX_MS = 15 * 60 * 1000
 

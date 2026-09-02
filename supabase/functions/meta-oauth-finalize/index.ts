@@ -21,22 +21,51 @@ const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 
 type Db = ReturnType<typeof createClient>
 
-/** Enregistre une Page, en mettant a jour le compte s'il existe deja. */
+/** Cree ou met a jour un compte, identifie par sa plateforme et son id externe. */
+async function poser(
+  db: Db,
+  valeurs: Record<string, unknown>,
+  platform: string,
+  externalId: string,
+): Promise<boolean> {
+  const { data: existant } = await db
+    .from('accounts')
+    .select('id')
+    .eq('platform', platform)
+    .eq('external_account_id', externalId)
+    .maybeSingle()
+
+  if (existant?.id) {
+    const { error } = await db.from('accounts').update(valeurs).eq('id', existant.id)
+    if (error) throw new MetaError(error.message, 'db')
+    return true
+  }
+
+  const { error } = await db.from('accounts').insert(valeurs)
+  if (error) throw new MetaError(error.message, 'db')
+  return false
+}
+
+/**
+ * Enregistre le compte Instagram, et la Page Facebook qui va avec.
+ *
+ * Deux lignes distinctes pour un seul jeton : Instagram publie sur le compte
+ * professionnel, Facebook Reels publie sur la Page, et les identifiants ne
+ * sont pas les memes. Les separer permet de programmer une video sur l'un sans
+ * l'autre, avec sa propre heure et sa propre legende.
+ */
 async function enregistrer(
   db: Db,
   page: PageInstagram,
   brand: string,
   userToken: string,
   expiry: string | null,
-): Promise<{ nom: string; misAJour: boolean }> {
+): Promise<{ nom: string; misAJour: boolean; facebook: string | null }> {
   const nom = page.ig_username ? `@${page.ig_username}` : page.page_name
 
-  const valeurs = {
-    platform: 'instagram',
+  const commun = {
     brand,
-    account_name: nom,
-    external_account_id: page.ig_user_id,
-    // C'est le jeton de la Page qui publie.
+    // C'est le jeton de la Page qui publie, des deux cotes.
     access_token: page.page_access_token,
     // Le jeton utilisateur sert a regenerer celui de la Page : sans lui, le
     // renouvellement automatique serait impossible.
@@ -45,22 +74,41 @@ async function enregistrer(
     status: 'active',
   }
 
-  const { data: existant } = await db
-    .from('accounts')
-    .select('id')
-    .eq('platform', 'instagram')
-    .eq('external_account_id', page.ig_user_id)
-    .maybeSingle()
+  const misAJour = await poser(
+    db,
+    { ...commun, platform: 'instagram', account_name: nom, external_account_id: page.ig_user_id },
+    'instagram',
+    page.ig_user_id,
+  )
 
-  if (existant?.id) {
-    const { error } = await db.from('accounts').update(valeurs).eq('id', existant.id)
-    if (error) throw new MetaError(error.message, 'db')
-    return { nom, misAJour: true }
+  // La Page Facebook, seulement si on la connait : le troisieme chemin de
+  // secours peut renvoyer un compte Instagram sans Page associee.
+  let facebook: string | null = null
+  if (page.page_id) {
+    facebook = page.page_name
+    await poser(
+      db,
+      {
+        ...commun,
+        platform: 'facebook',
+        account_name: page.page_name,
+        external_account_id: page.page_id,
+      },
+      'facebook',
+      page.page_id,
+    )
   }
 
-  const { error } = await db.from('accounts').insert(valeurs)
-  if (error) throw new MetaError(error.message, 'db')
-  return { nom, misAJour: false }
+  return { nom, misAJour, facebook }
+}
+
+/** Une seule phrase, qu'il y ait une ou deux lignes creees. */
+function messageFinal(nom: string, misAJour: boolean, facebook: string | null): string {
+  const verbe = misAJour ? 'a ete reconnecte' : 'a ete ajoute'
+  if (facebook) {
+    return `Le compte ${nom} ${verbe}, ainsi que la Page Facebook ${facebook} pour les Reels.`
+  }
+  return `Le compte ${nom} ${verbe} et il est actif.`
 }
 
 Deno.serve(async (req) => {
@@ -134,13 +182,11 @@ Deno.serve(async (req) => {
       if (!page) {
         return json({ ok: false, error: "Ce compte Instagram n'est plus accessible" }, 400)
       }
-      const { nom, misAJour } = await enregistrer(db, page, brand, userToken, expiry)
+      const { nom, misAJour, facebook } = await enregistrer(db, page, brand, userToken, expiry)
       return json({
         ok: true,
         account_name: nom,
-        message: misAJour
-          ? `Le compte ${nom} a ete reconnecte.`
-          : `Le compte ${nom} a ete ajoute et il est actif.`,
+        message: messageFinal(nom, misAJour, facebook),
       })
     }
 
@@ -159,13 +205,11 @@ Deno.serve(async (req) => {
       })
     }
 
-    const { nom, misAJour } = await enregistrer(db, pages[0], brand, userToken, expiry)
+    const { nom, misAJour, facebook } = await enregistrer(db, pages[0], brand, userToken, expiry)
     return json({
       ok: true,
       account_name: nom,
-      message: misAJour
-        ? `Le compte ${nom} a ete reconnecte.`
-        : `Le compte ${nom} a ete ajoute et il est actif.`,
+      message: messageFinal(nom, misAJour, facebook),
     })
   } catch (err) {
     const e = err instanceof MetaError ? err : null

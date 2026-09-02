@@ -289,23 +289,41 @@ export default function Guide() {
           open={open === 'facebook'}
           onToggle={() => toggle('facebook')}
         >
-          <p className="mb-4 text-sm text-mist-300">
-            Tu reutilises l'app Facebook creee pour Instagram. Il faut juste un token de Page.
+          <p className="mb-4 rounded-lg border border-ok-600/40 bg-ok-600/10 px-3 py-2 text-xs text-ok-400">
+            Automatise, et deja fait pour toi si tu as connecte Instagram : la Page Facebook est
+            enregistree en meme temps, avec le meme jeton. Tu n'as rien de plus a coller.
           </p>
           <ol className="space-y-3">
             <Step n={1}>
-              Regenere un token avec en plus <Code>pages_manage_posts</Code>.
+              Facebook Reels publie sur ta <strong className="text-mist-100">Page</strong>, pas sur
+              ton compte Instagram. Ce sont deux comptes distincts dans l'application, avec chacun
+              son heure et sa legende.
             </Step>
             <Step n={2}>
-              Appelle <Code>me/accounts</Code>. Chaque page listee a son propre champ{' '}
-              <Code>access_token</Code> : c'est celui-la qu'il faut, pas celui de l'utilisateur.
+              Deux permissions supplementaires sont necessaires,{' '}
+              <Code>pages_manage_posts</Code> et <Code>publish_video</Code>. Meta ne les accorde
+              pas aux autorisations deja donnees.
             </Step>
-            <Step n={3}>Echange-le en longue duree, comme pour Instagram.</Step>
+            <Step n={3}>
+              Il faut donc{' '}
+              <strong className="text-mist-100">relancer une fois la connexion Instagram</strong>{' '}
+              depuis l'onglet Comptes. Coche a nouveau ta Page et ton compte Instagram. La Page
+              apparaitra ensuite comme un compte Facebook Reels.
+            </Step>
             <Step n={4}>
-              Onglet Comptes : le Page ID dans "Identifiant sur la plateforme", le token de Page
-              dans "Token d'acces". Puis teste la connexion.
+              Clique sur <strong className="text-mist-100">Tester la connexion</strong> sur la
+              ligne Facebook pour confirmer.
+            </Step>
+            <Step n={5}>
+              Dans une nouvelle publication, coche les deux comptes pour diffuser la meme video sur
+              Instagram et sur Facebook, chacun a son heure.
             </Step>
           </ol>
+          <p className="mt-4 text-xs text-mist-500">
+            Cote technique : Facebook n'accepte pas qu'on lui donne une URL a telecharger, il faut
+            lui transmettre les octets de la video. C'est fait automatiquement, la limite est de
+            150 Mo par video.
+          </p>
         </Panel>
 
         <Panel
