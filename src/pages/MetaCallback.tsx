@@ -8,6 +8,7 @@ import {
   type CompteMeta,
 } from '../lib/meta'
 import { friendlyError } from '../lib/errors'
+import { listAccounts } from '../lib/api'
 
 type Etat =
   | { phase: 'travail' }
@@ -22,6 +23,19 @@ export default function MetaCallback() {
   // Comptes coches sur l'ecran de choix. Tout est coche d'entree : quand on
   // arrive avec trois comptes, on veut presque toujours les trois.
   const [choisis, setChoisis] = useState<Set<string>>(new Set())
+
+  /**
+   * La marque de chaque compte.
+   *
+   * Elle etait unique pour toute la selection : cocher trois comptes leur
+   * donnait la meme marque, et un compte range sous la mauvaise marque publie
+   * le ton et l'avertissement legal d'une autre. On la demande par compte, en
+   * proposant celle du flow comme point de depart.
+   */
+  const [marques, setMarques] = useState<Record<string, string>>({})
+
+  /** Les marques deja connues, pour l'autocompletion. */
+  const [connues, setConnues] = useState<string[]>([])
 
   // Le jeton ne quitte pas ce composant : il sert a finaliser, et disparait
   // avec la page. Il n'est jamais range dans un stockage du navigateur.
@@ -93,6 +107,14 @@ export default function MetaCallback() {
       .then((res) => {
         if (res.choix_requis && res.comptes?.length) {
           setChoisis(new Set(res.comptes.map((c) => c.ig_user_id)))
+          setMarques(
+            Object.fromEntries(res.comptes.map((c) => [c.ig_user_id, flow.brand])),
+          )
+          // Les marques deja utilisees alimentent l'autocompletion. Un echec
+          // ici n'empeche pas de choisir, il retire juste la liste deroulante.
+          listAccounts()
+            .then((comptes) => setConnues([...new Set(comptes.map((a) => a.brand))].sort()))
+            .catch(() => {})
           setEtat({ phase: 'choix', comptes: res.comptes })
           return
         }
@@ -117,6 +139,9 @@ export default function MetaCallback() {
     })
   }
 
+  /** Un compte coche sans marque bloque la validation. */
+  const marqueManquante = [...choisis].some((id) => !(marques[id] ?? '').trim())
+
   async function connecterSelection() {
     const en_cours = jeton.current
     if (!en_cours || choisis.size === 0) return
@@ -128,6 +153,7 @@ export default function MetaCallback() {
         expires_in: en_cours.expiresIn,
         data_access_expiration_time: en_cours.dae,
         ig_user_ids: [...choisis],
+        marques,
       })
       clearMetaFlow()
       setEtat({ phase: 'succes', message: res.message })
@@ -169,7 +195,8 @@ export default function MetaCallback() {
               <p className="mb-1 font-medium">Quels comptes connecter ?</p>
               <p className="mb-4 text-sm text-mist-500">
                 Coche ceux que tu veux ajouter. Chacun cree son compte Instagram et sa Page
-                Facebook pour les Reels.
+                Facebook pour les Reels. Verifie la marque de chacun : c'est elle qui decide du
+                ton des textes et des mentions legales.
               </p>
 
               <button
@@ -192,48 +219,78 @@ export default function MetaCallback() {
                 {etat.comptes.map((c) => {
                   const coche = choisis.has(c.ig_user_id)
                   return (
-                    <button
+                    <div
                       key={c.ig_user_id}
-                      type="button"
-                      onClick={() => basculer(c.ig_user_id)}
-                      aria-pressed={coche}
-                      className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
-                        coche
-                          ? 'border-brand-500/50 bg-brand-500/10'
-                          : 'border-ink-700 hover:border-ink-600 hover:bg-ink-800'
+                      className={`rounded-xl border transition-colors ${
+                        coche ? 'border-brand-500/50 bg-brand-500/10' : 'border-ink-700'
                       }`}
                     >
-                      <span
-                        aria-hidden="true"
-                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[11px] ${
-                          coche
-                            ? 'border-brand-400 bg-brand-500 text-white'
-                            : 'border-ink-600 bg-ink-850'
-                        }`}
+                      <button
+                        type="button"
+                        onClick={() => basculer(c.ig_user_id)}
+                        aria-pressed={coche}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left"
                       >
-                        {coche ? '✓' : ''}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">
-                          {c.ig_username ? `@${c.ig_username}` : c.page_name}
+                        <span
+                          aria-hidden="true"
+                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[11px] ${
+                            coche
+                              ? 'border-brand-400 bg-brand-500 text-white'
+                              : 'border-ink-600 bg-ink-850'
+                          }`}
+                        >
+                          {coche ? '✓' : ''}
                         </span>
-                        <span className="block truncate text-xs text-mist-500">
-                          Page {c.page_name}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium">
+                            {c.ig_username ? `@${c.ig_username}` : c.page_name}
+                          </span>
+                          <span className="block truncate text-xs text-mist-500">
+                            Page {c.page_name}
+                          </span>
                         </span>
-                      </span>
-                    </button>
+                      </button>
+
+                      {coche && (
+                        <div className="border-t border-ink-800 px-4 py-2.5">
+                          <label
+                            className="block text-xs text-mist-500"
+                            htmlFor={`marque-${c.ig_user_id}`}
+                          >
+                            Marque
+                          </label>
+                          <input
+                            id={`marque-${c.ig_user_id}`}
+                            className="field mt-1 !py-1.5 text-sm"
+                            value={marques[c.ig_user_id] ?? ''}
+                            list="marques-connues"
+                            placeholder="EdgeSyncFX"
+                            onChange={(e) =>
+                              setMarques((prev) => ({ ...prev, [c.ig_user_id]: e.target.value }))
+                            }
+                          />
+                        </div>
+                      )}
+                    </div>
                   )
                 })}
+                <datalist id="marques-connues">
+                  {connues.map((b) => (
+                    <option key={b} value={b} />
+                  ))}
+                </datalist>
               </div>
 
               <button
                 className="btn btn-primary mt-4 w-full"
                 onClick={() => void connecterSelection()}
-                disabled={choisis.size === 0}
+                disabled={choisis.size === 0 || marqueManquante}
               >
                 {choisis.size === 0
                   ? 'Choisis au moins un compte'
-                  : `Connecter ${choisis.size} compte${choisis.size > 1 ? 's' : ''}`}
+                  : marqueManquante
+                    ? 'Renseigne la marque de chaque compte'
+                    : `Connecter ${choisis.size} compte${choisis.size > 1 ? 's' : ''}`}
               </button>
             </div>
           )}

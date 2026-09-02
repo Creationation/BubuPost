@@ -150,6 +150,8 @@ export async function finaliserMeta(input: {
   ig_user_id?: string
   /** Selection multiple sur l ecran de choix. */
   ig_user_ids?: string[]
+  /** Marque choisie pour chaque compte, indexee par ig_user_id. */
+  marques?: Record<string, string>
 }): Promise<FinalisationMeta> {
   const { data, error } = await supabase.functions.invoke<FinalisationMeta & { error?: string }>(
     'meta-oauth-finalize',

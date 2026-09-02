@@ -3,6 +3,7 @@ import { generateCaptionBatch, listPosts, updatePost } from '../lib/api'
 import { friendlyError } from '../lib/errors'
 import { PLATFORM_ICON, type PostWithAccount } from '../lib/types'
 import type { Probleme } from '../lib/consignes'
+import { langueDe } from '../lib/langues'
 import { formatDateTime } from '../lib/format'
 import { Alert, Loading, Modal } from './ui'
 
@@ -121,6 +122,10 @@ export default function RevisionTextes({
             brand: p.accounts?.brand,
             account_name: p.accounts?.account_name,
             youtube_type: (p.youtube_type as 'short' | 'video' | null) ?? undefined,
+            // La reecriture garde la langue de la publication : changer les
+            // consignes de ton ne doit pas faire basculer un compte anglophone
+            // en francais sans qu'on l'ait demande.
+            language: langueDe(p, p.accounts),
             existant: [p.caption ?? '', (p.hashtags ?? []).map((h) => `#${h}`).join(' ')]
               .filter(Boolean)
               .join('\n'),

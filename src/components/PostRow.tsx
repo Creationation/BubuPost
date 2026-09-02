@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { listLogs, updatePost } from '../lib/api'
+import { useEffect, useMemo, useState } from 'react'
+import { listLogs, remplacerVideo, updatePost } from '../lib/api'
 import { friendlyError } from '../lib/errors'
 import {
   PLATFORM_ICON,
@@ -7,9 +7,31 @@ import {
   type PostWithAccount,
   type PublishLog,
 } from '../lib/types'
+import { LANGUES, langueDe, teinteLangue, langue as trouverLangue } from '../lib/langues'
+import { deplacable } from '../lib/calendrier'
 import { formatDateTime, fromLocalInput, relative, toLocalInput } from '../lib/format'
 import { Alert, Loading, Modal } from './ui'
 import { BadgeStatut, LigneAttente } from './Attente'
+import { ChoixVideo, LecteurVideo } from './Video'
+
+/** La langue d'une publication, en deux lettres. */
+export function BadgeLangue({
+  code,
+  className = '',
+}: {
+  code: string
+  className?: string
+}) {
+  const l = trouverLangue(code)
+  return (
+    <span
+      className={`chip ${teinteLangue(code)} ${className}`}
+      title={`Texte ecrit en ${l.label.toLowerCase()}`}
+    >
+      {l.badge}
+    </span>
+  )
+}
 
 export function PostRow({
   post,
@@ -42,6 +64,7 @@ export function PostRow({
               {account?.account_name ?? 'compte supprime'}
             </span>
             {account && <span className="text-xs text-mist-600">{account.brand}</span>}
+            <BadgeLangue code={langueDe(post, account)} />
             {post.youtube_type && (
               <span
                 className={`chip ${
@@ -141,10 +164,13 @@ export function PostRow({
 
 export function PostEditor({
   post,
+  campagne = [],
   onClose,
   onSaved,
 }: {
   post: PostWithAccount | null
+  /** Toutes les publications de la campagne, celle-ci comprise. */
+  campagne?: PostWithAccount[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -152,6 +178,11 @@ export function PostEditor({
   const [hashtags, setHashtags] = useState('')
   const [when, setWhen] = useState('')
   const [videoUrl, setVideoUrl] = useState('')
+  const [langue, setLangue] = useState('fr')
+  const [titre, setTitre] = useState('')
+
+  const [choixOuvert, setChoixOuvert] = useState(false)
+  const [porteeVideo, setPorteeVideo] = useState<'seule' | 'campagne'>('campagne')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -161,8 +192,22 @@ export function PostEditor({
     setHashtags((post.hashtags ?? []).join(' '))
     setWhen(toLocalInput(post.scheduled_at))
     setVideoUrl(post.video_url)
+    setTitre(post.title ?? '')
+    setLangue(langueDe(post, post.accounts))
+    setPorteeVideo('campagne')
+    setChoixOuvert(false)
     setError(null)
   }, [post])
+
+  // Les autres publications de la campagne qu'on peut encore modifier. Une
+  // publication deja partie garde la video avec laquelle elle est partie.
+  const soeurs = useMemo(
+    () => campagne.filter((p) => p.id !== post?.id && deplacable(p.status)),
+    [campagne, post],
+  )
+
+  const videoChangee = post != null && videoUrl.trim() !== post.video_url
+  const estYoutube = post?.accounts?.platform === 'youtube'
 
   async function save() {
     if (!post) return
@@ -177,7 +222,19 @@ export function PostEditor({
           .filter(Boolean),
         scheduled_at: fromLocalInput(when),
         video_url: videoUrl.trim(),
+        language: langue,
+        ...(estYoutube ? { title: titre.trim() || null } : {}),
       })
+
+      // La campagne suit seulement si on l'a demande, et seulement pour ce qui
+      // n'est pas encore parti.
+      if (videoChangee && porteeVideo === 'campagne' && soeurs.length > 0) {
+        await remplacerVideo(
+          soeurs.map((p) => p.id),
+          videoUrl.trim(),
+        )
+      }
+
       onSaved()
     } catch (err) {
       setError(friendlyError(err))
@@ -191,24 +248,140 @@ export function PostEditor({
       open={post !== null}
       title={`Modifier : ${post?.accounts?.account_name ?? ''}`}
       onClose={onClose}
+      wide
     >
-      <div className="space-y-4">
-        <div>
-          <label className="label" htmlFor="edit-when">
-            Date et heure
-          </label>
-          <input
-            id="edit-when"
-            type="datetime-local"
-            className="field"
-            value={when}
-            onChange={(e) => setWhen(e.target.value)}
+      <div className="space-y-5">
+        <section>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="label !mb-0">Video</span>
+            <button className="btn btn-ghost !py-1 !text-xs" onClick={() => setChoixOuvert(true)}>
+              Remplacer la video
+            </button>
+          </div>
+
+          <LecteurVideo
+            url={videoUrl}
+            platform={post?.accounts?.platform}
+            youtubeType={post?.youtube_type}
           />
+
+          {videoChangee && (
+            <div className="mt-3 rounded-xl border border-brand-500/40 bg-brand-500/5 p-3">
+              <p className="text-xs font-medium text-mist-100">
+                Nouvelle video, pas encore enregistree.
+              </p>
+
+              {soeurs.length > 0 ? (
+                <div className="mt-2 space-y-1.5">
+                  <p className="text-xs text-mist-500">
+                    Cette publication fait partie d une campagne. Appliquer le changement a :
+                  </p>
+                  {(
+                    [
+                      {
+                        v: 'campagne' as const,
+                        label: `les ${soeurs.length + 1} publications de la campagne`,
+                        aide: 'Une campagne, c est une meme video sur plusieurs comptes.',
+                      },
+                      {
+                        v: 'seule' as const,
+                        label: 'cette publication seulement',
+                        aide: 'Les autres comptes garderont l ancienne video.',
+                      },
+                    ]
+                  ).map((o) => (
+                    <label
+                      key={o.v}
+                      className={`flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2 text-xs transition-colors ${
+                        porteeVideo === o.v
+                          ? 'border-brand-500/50 bg-brand-500/10'
+                          : 'border-ink-700 hover:border-ink-600'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="portee-video"
+                        className="mt-0.5"
+                        checked={porteeVideo === o.v}
+                        onChange={() => setPorteeVideo(o.v)}
+                      />
+                      <span>
+                        <span className="block text-mist-100">{o.label}</span>
+                        <span className="block text-mist-600">{o.aide}</span>
+                      </span>
+                    </label>
+                  ))}
+
+                  {campagne.length - 1 > soeurs.length && (
+                    <p className="text-xs text-mist-600">
+                      {campagne.length - 1 - soeurs.length} publication
+                      {campagne.length - 1 - soeurs.length > 1 ? 's' : ''} de la campagne{' '}
+                      {campagne.length - 1 - soeurs.length > 1 ? 'sont' : 'est'} deja partie
+                      {campagne.length - 1 - soeurs.length > 1 ? 's' : ''} et garde
+                      {campagne.length - 1 - soeurs.length > 1 ? 'nt' : ''} l ancienne video.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="mt-1 text-xs text-mist-500">
+                  Le changement ne concerne que cette publication.
+                </p>
+              )}
+            </div>
+          )}
+        </section>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="label" htmlFor="edit-when">
+              Date et heure
+            </label>
+            <input
+              id="edit-when"
+              type="datetime-local"
+              className="field"
+              value={when}
+              onChange={(e) => setWhen(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="label" htmlFor="edit-langue">
+              Langue du texte
+            </label>
+            <select
+              id="edit-langue"
+              className="field"
+              value={langue}
+              onChange={(e) => setLangue(e.target.value)}
+            >
+              {LANGUES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.label}
+                  {l.code === post?.accounts?.language ? ' (langue du compte)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
+
+        {estYoutube && (
+          <div>
+            <label className="label" htmlFor="edit-titre">
+              Titre {post?.youtube_type === 'video' ? 'de la video' : 'du Short'}
+            </label>
+            <input
+              id="edit-titre"
+              className="field"
+              value={titre}
+              onChange={(e) => setTitre(e.target.value)}
+            />
+          </div>
+        )}
 
         <div>
           <label className="label" htmlFor="edit-caption">
-            Legende
+            {estYoutube && post?.youtube_type === 'video' ? 'Description' : 'Legende'}
           </label>
           <textarea
             id="edit-caption"
@@ -231,21 +404,21 @@ export function PostEditor({
           />
         </div>
 
-        <div>
-          <label className="label" htmlFor="edit-video">
-            URL de la video
-          </label>
+        <details className="rounded-xl border border-ink-700 px-3 py-2">
+          <summary className="cursor-pointer text-xs text-mist-600 hover:text-mist-300">
+            Adresse de la video
+          </summary>
           <input
             id="edit-video"
-            className="field font-mono text-xs"
+            className="field mt-2 font-mono text-xs"
             value={videoUrl}
             onChange={(e) => setVideoUrl(e.target.value)}
           />
-        </div>
+        </details>
 
         {error && <Alert kind="error">{error}</Alert>}
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex justify-end gap-2 pt-1">
           <button className="btn btn-ghost" onClick={onClose}>
             Annuler
           </button>
@@ -254,6 +427,16 @@ export function PostEditor({
           </button>
         </div>
       </div>
+
+      <ChoixVideo
+        open={choixOuvert}
+        urlActuelle={videoUrl}
+        onClose={() => setChoixOuvert(false)}
+        onChoisi={(url) => {
+          setVideoUrl(url)
+          setChoixOuvert(false)
+        }}
+      />
     </Modal>
   )
 }

@@ -179,6 +179,13 @@ export default function Posts() {
     }
   }
 
+  /** Toute la campagne de la publication en cours de modification. */
+  const campagneEditee = useMemo(() => {
+    const id = editing?.campaign_id
+    if (!id) return []
+    return posts.filter((p) => p.campaign_id === id)
+  }, [editing, posts])
+
   /** Les autres publications de la campagne, celle qu'on deplace exclue. */
   const soeurs = useMemo(() => {
     const id = deplacement?.post.campaign_id
@@ -414,6 +421,7 @@ export default function Posts() {
 
       <PostEditor
         post={editing}
+        campagne={campagneEditee}
         onClose={() => setEditing(null)}
         onSaved={() => {
           setEditing(null)

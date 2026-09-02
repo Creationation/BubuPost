@@ -141,6 +141,15 @@ Deno.serve(async (req) => {
   let body: {
     token?: string
     brand?: string
+    /**
+     * Marque de chaque compte, indexee par ig_user_id.
+     *
+     * La selection multiple attribuait a tous la marque saisie au depart du
+     * flow. Trois comptes coches ensemble sont pourtant trois marques
+     * differentes, et une marque fausse fait publier a un compte le ton et
+     * l'avertissement legal d'une autre.
+     */
+    marques?: Record<string, string>
     expires_in?: number
     data_access_expiration_time?: number
     /** Choix de l'utilisateur quand plusieurs Pages sont disponibles. */
@@ -222,7 +231,8 @@ Deno.serve(async (req) => {
       // doublon au lieu d'une mise a jour.
       const resultats = []
       for (const page of retenues) {
-        resultats.push(await enregistrer(db, page, brand, userToken, expiry))
+        const marque = (body.marques?.[page.ig_user_id] ?? '').trim() || brand
+        resultats.push(await enregistrer(db, page, marque, userToken, expiry))
       }
 
       const manquants = choisis.length - retenues.length

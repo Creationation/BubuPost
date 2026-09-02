@@ -16,8 +16,30 @@ import { corsHeaders, json } from '../_shared/cors.ts'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-/** Nombre de posts traites par passage, pour rester loin du timeout. */
-const BATCH_SIZE = 10
+/**
+ * Nombre de publications traitees par passage.
+ *
+ * Mesure du 2 septembre : neuf publications dues a la meme seconde ont occupe
+ * un passage pendant 130 secondes, qui tournait encore quand le suivant a
+ * demarre. Tout est parti, mais une video un peu plus lourde aurait fait
+ * couper la fonction en plein transfert, laissant la publication a moitie
+ * envoyee chez la plateforme.
+ *
+ * Trois par passage, toutes les deux minutes, font quatre-vingt-dix par heure :
+ * tres au-dessus des trente-trois publications quotidiennes visees. Le reste
+ * attend le passage suivant, ce qui l'etale au lieu de l'empiler.
+ */
+const BATCH_SIZE = 3
+
+/**
+ * Budget de temps d'un passage, en millisecondes.
+ *
+ * Le plafond en nombre ne suffit pas : trois envois YouTube sont bien plus
+ * longs que trois TikTok. On verifie donc le temps ecoule AVANT d'engager la
+ * publication suivante, jamais pendant. Une publication commencee va toujours
+ * a son terme, sinon on laisse un envoi orphelin chez la plateforme.
+ */
+const BUDGET_MS = 90_000
 /** Duree maximale d'attente du traitement du media, par post et par passage. */
 const POLL_ATTEMPTS = 10
 const POLL_DELAY_MS = 5000
@@ -538,6 +560,8 @@ Deno.serve(async (req) => {
   }
 
   const results: Array<{ post: string; outcome: string }> = []
+  const debutPassage = Date.now()
+  let reportees = 0
 
   // Les echecs sont collectes puis annonces ensemble : un token expire fait
   // tomber toutes les publications du jour, et neuf messages pour un seul
@@ -549,6 +573,20 @@ Deno.serve(async (req) => {
       await log(db, post.id, 'skipped_no_account', null)
       continue
     }
+
+    // Le budget se verifie ici, avant d'engager quoi que ce soit. Une fois
+    // l'envoi commence, on va jusqu'au bout : abandonner en cours de route
+    // laisserait un media a moitie transfere chez la plateforme.
+    if (results.length > 0 && Date.now() - debutPassage > BUDGET_MS) {
+      reportees = ((posts ?? []) as Post[]).length - results.length
+      await log(db, post.id, 'reportee_budget', {
+        ecoule_s: Math.round((Date.now() - debutPassage) / 1000),
+        budget_s: BUDGET_MS / 1000,
+        deja_traitees: results.length,
+      })
+      break
+    }
+
     const outcome = await processPost(db, post, settings, echecs)
     results.push({ post: post.id, outcome })
   }
@@ -571,5 +609,11 @@ Deno.serve(async (req) => {
       .lt('started_at', new Date(Date.now() - 7 * 86_400_000).toISOString())
   }
 
-  return json({ ran_at: now, processed: results.length, results })
+  return json({
+    ran_at: now,
+    processed: results.length,
+    reportees,
+    duree_s: Math.round((Date.now() - debutPassage) / 1000),
+    results,
+  })
 })

@@ -23,6 +23,8 @@ export type AccountInput = {
   platform: string
   brand: string
   account_name: string
+  /** Code ISO de la langue habituelle du compte. */
+  language?: string
   external_account_id: string | null
   access_token: string | null
   refresh_token: string | null
@@ -86,6 +88,8 @@ export type TargetInput = {
   youtube_type?: 'short' | 'video' | null
   title?: string | null
   thumbnail_url?: string | null
+  /** Surcharge la langue du compte, quand une campagne fait exception. */
+  language?: string | null
 }
 
 /**
@@ -110,6 +114,7 @@ export async function createPostGroup(
     youtube_type: t.youtube_type ?? null,
     title: t.title?.trim() || null,
     thumbnail_url: t.thumbnail_url?.trim() || null,
+    language: t.language ?? null,
     status: 'pending',
   }))
   const inserted = unwrap(await supabase.from('posts').insert(rows).select('id'))
@@ -141,6 +146,7 @@ export async function updatePost(
     youtube_type?: string | null
     title?: string | null
     thumbnail_url?: string | null
+    language?: string | null
   },
 ): Promise<void> {
   if (typeof patch.caption === 'string') refuserJson(patch.caption, 'modification')
@@ -166,6 +172,30 @@ export async function deplacerPosts(
       await supabase
         .from('posts')
         .update({ scheduled_at, next_attempt_at: null })
+        .eq('id', id)
+        .select('id'),
+    )
+    faits++
+  }
+  return faits
+}
+
+/**
+ * Remplace la video de plusieurs publications d'un coup.
+ *
+ * Une campagne, c'est une video sur plusieurs comptes : changer la video sur
+ * une seule ligne casse cette unite sans le dire. On propose donc les deux, et
+ * on ne touche que ce qui n'est pas encore parti.
+ */
+export async function remplacerVideo(ids: string[], videoUrl: string): Promise<number> {
+  let faits = 0
+  for (const id of ids) {
+    unwrap(
+      await supabase
+        .from('posts')
+        // container_id remis a zero : il designe un envoi commence chez la
+        // plateforme avec l'ANCIENNE video. Le garder ferait publier celle-la.
+        .update({ video_url: videoUrl, container_id: null })
         .eq('id', id)
         .select('id'),
     )
@@ -244,6 +274,53 @@ export async function uploadVideo(
   return supabase.storage.from('videos').getPublicUrl(path).data.publicUrl
 }
 
+/** Une video presente dans le stockage, telle qu'on la propose au choix. */
+export type VideoStockee = {
+  url: string
+  nom: string
+  /** Le dossier, qui est la date d'envoi. */
+  jour: string
+  taille: number | null
+}
+
+/**
+ * Les videos deja envoyees, de la plus recente a la plus ancienne.
+ *
+ * Le bucket est organise par jour : on liste les dossiers, puis leur contenu.
+ * Se limiter aux trente derniers jours evite de parcourir tout l'historique
+ * pour remplir une liste que personne ne fait defiler jusqu'en bas.
+ */
+export async function listerVideos(jours = 30): Promise<VideoStockee[]> {
+  const { data: dossiers, error } = await supabase.storage
+    .from('videos')
+    .list('', { limit: jours, sortBy: { column: 'name', order: 'desc' } })
+
+  if (error) throw new Error(errorMessage(error))
+
+  const sortie: VideoStockee[] = []
+
+  for (const dossier of dossiers ?? []) {
+    // Un dossier n'a pas de metadonnees ; un fichier depose a la racine en a.
+    if (dossier.metadata) continue
+
+    const { data: fichiers } = await supabase.storage
+      .from('videos')
+      .list(dossier.name, { limit: 100, sortBy: { column: 'name', order: 'desc' } })
+
+    for (const fichier of fichiers ?? []) {
+      const chemin = `${dossier.name}/${fichier.name}`
+      sortie.push({
+        url: supabase.storage.from('videos').getPublicUrl(chemin).data.publicUrl,
+        nom: fichier.name,
+        jour: dossier.name,
+        taille: (fichier.metadata?.size as number | undefined) ?? null,
+      })
+    }
+  }
+
+  return sortie
+}
+
 // ---------------------------------------------------------------------------
 // Legendes par l'API Claude
 // ---------------------------------------------------------------------------
@@ -263,6 +340,8 @@ export type CaptionCible = {
   brand?: string
   account_name?: string
   youtube_type?: 'short' | 'video'
+  /** Code ISO de la langue de sortie. Absent vaut francais. */
+  language?: string
   /** Texte actuel, quand on reecrit une publication deja programmee. */
   existant?: string
 }

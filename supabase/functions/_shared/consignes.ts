@@ -31,8 +31,87 @@ export type ConsigneMarque = {
   vocabulairePrefere: string
   vocabulaireEvite: string
   appelAction: string
-  hashtags: string[]
-  mentionsLegales: string
+  /**
+   * Une liste par langue, indexee par code ISO.
+   *
+   * L'ancienne forme, un simple tableau, est lue comme du francais. Elle ne
+   * sert PAS de repli pour les autres langues : imposer #tradingalgorithmique
+   * a un texte anglais est exactement le probleme qu'on veut eviter.
+   */
+  hashtags: string[] | Record<string, string[]>
+  /**
+   * Une mention par langue, indexee par code ISO.
+   *
+   * L'ancienne forme, une simple chaine, reste acceptee et est lue comme du
+   * francais : les marques enregistrees avant les langues continuent de
+   * fonctionner sans reprise de donnees.
+   */
+  mentionsLegales: string | Record<string, string>
+}
+
+export const LANGUE_DEFAUT = 'fr'
+
+/**
+ * Le nom de chaque langue dans cette langue.
+ *
+ * Dire « ecris en English » plutot que « ecris en anglais » evite que le
+ * modele traite la consigne comme une traduction depuis le francais.
+ * Doit rester aligne sur LANGUES dans src/lib/langues.ts.
+ */
+const NOM_NATIF: Record<string, string> = {
+  fr: 'francais',
+  en: 'English',
+  es: 'espanol',
+  de: 'Deutsch',
+  it: 'italiano',
+  pt: 'portugues',
+  nl: 'Nederlands',
+}
+
+export function nomLangue(code: string): string {
+  return NOM_NATIF[code] ?? NOM_NATIF[LANGUE_DEFAUT]
+}
+
+/** Range l'ancienne forme et la nouvelle sous la meme structure. */
+export function mentions(m: ConsigneMarque | null): Record<string, string> {
+  const brut = m?.mentionsLegales
+  if (!brut) return {}
+  if (typeof brut === 'string') return brut.trim() ? { [LANGUE_DEFAUT]: brut } : {}
+  const sortie: Record<string, string> = {}
+  for (const [code, valeur] of Object.entries(brut)) {
+    const texte = String(valeur ?? '')
+    if (texte.trim()) sortie[code] = texte
+  }
+  return sortie
+}
+
+/**
+ * Les hashtags imposes par la marque dans une langue donnee.
+ *
+ * null veut dire « aucun impose », et c'est different d'une liste vide : le
+ * modele choisit alors librement, dans la bonne langue. Contrairement a
+ * l'avertissement legal, il n'y a pas de repli sur le francais. Un hashtag
+ * francais sous un texte anglais ne touche personne.
+ */
+export function hashtagsMarque(m: ConsigneMarque | null, code: string): string[] | null {
+  const brut = m?.hashtags
+  if (!brut) return null
+  if (Array.isArray(brut)) {
+    return code === LANGUE_DEFAUT && brut.length > 0 ? brut : null
+  }
+  const liste = brut[code]
+  return Array.isArray(liste) && liste.length > 0 ? liste : null
+}
+
+/**
+ * La mention a employer dans une langue donnee.
+ *
+ * A defaut, on retombe sur le francais : un avertissement de risque dans la
+ * mauvaise langue vaut mieux qu'un avertissement absent.
+ */
+export function mentionPour(m: ConsigneMarque | null, code: string): string {
+  const par = mentions(m)
+  return par[code] ?? par[LANGUE_DEFAUT] ?? ''
 }
 
 // ---------------------------------------------------------------------------
@@ -163,9 +242,16 @@ export function texteBloc(bloc: Bloc, titre: string): string {
   return lignes.join('\n')
 }
 
-/** Les regles d'une marque, en clair, pour le prompt. */
-export function texteMarque(nom: string, m: ConsigneMarque): string {
+/**
+ * Les regles d'une marque, en clair, pour le prompt.
+ *
+ * languesUtilisees limite les mentions legales enoncees a celles qui servent
+ * reellement : inutile de faire lire au modele l'avertissement neerlandais
+ * quand la campagne ne part qu'en francais et en anglais.
+ */
+export function texteMarque(nom: string, m: ConsigneMarque, languesUtilisees: string[] = []): string {
   const lignes = [`[Marque ${nom}]`]
+  const codes = languesUtilisees.length > 0 ? languesUtilisees : [LANGUE_DEFAUT]
 
   if (m.niche.trim()) lignes.push(`- Sujet et niche : ${m.niche.trim()}`)
   if (m.audience.trim()) lignes.push(`- Public vise : ${m.audience.trim()}`)
@@ -175,13 +261,32 @@ export function texteMarque(nom: string, m: ConsigneMarque): string {
   if (m.vocabulaireEvite.trim())
     lignes.push(`- A ne jamais employer : ${m.vocabulaireEvite.trim()}`)
   if (m.appelAction.trim()) lignes.push(`- Appel a l'action habituel : ${m.appelAction.trim()}`)
-  if (m.hashtags.length > 0)
-    lignes.push(`- Hashtags recurrents de la marque : ${m.hashtags.join(', ')}`)
-  if (m.mentionsLegales.trim())
+  for (const code of codes) {
+    const imposes = hashtagsMarque(m, code)
+    if (imposes) {
+      lignes.push(
+        `- Hashtags recurrents de la marque, pour un texte en ${nomLangue(code)} : ${imposes.join(', ')}`,
+      )
+    } else if (codes.length > 1 || code !== LANGUE_DEFAUT) {
+      lignes.push(
+        `- Aucun hashtag impose pour un texte en ${nomLangue(code)} : choisis-les toi-meme, dans cette langue.`,
+      )
+    }
+  }
+  const parLangue = codes
+    .map((code) => ({ code, texte: mentionPour(m, code).trim() }))
+    .filter((x) => x.texte)
+
+  if (parLangue.length > 0) {
+    lignes.push('- A inclure systematiquement dans le TEXTE, mot pour mot, sans le reformuler :')
+    for (const { code, texte } of parLangue) {
+      lignes.push(`  . pour un texte en ${nomLangue(code)} : ${texte}`)
+      lignes.push(`    (${texte.length} caracteres, qui comptent dans la longueur maximale)`)
+    }
     lignes.push(
-      `- A inclure systematiquement dans le TEXTE, sans le reformuler : ${m.mentionsLegales.trim()}`,
-      `  Cette mention fait ${m.mentionsLegales.trim().length} caracteres, qui comptent dans la longueur maximale : prevois la place. Elle ne va jamais dans un titre.`,
+      "  Prends la version qui correspond a la langue de la cible, et elle seule. Ne la traduis pas toi-meme, ne la mets jamais dans un titre.",
     )
+  }
 
   return lignes.length > 1 ? lignes.join('\n') : ''
 }
@@ -219,8 +324,12 @@ const MARGE_MENTION = 40
  * une option, depasser la limite non plus. On garde la mention et on signale la
  * contradiction plutot que de payer une relance qui echouera pareil.
  */
-export function conflitMention(bloc: Bloc | null, marque: ConsigneMarque | null): string | null {
-  const mention = marque?.mentionsLegales?.trim()
+export function conflitMention(
+  bloc: Bloc | null,
+  marque: ConsigneMarque | null,
+  code: string = LANGUE_DEFAUT,
+): string | null {
+  const mention = mentionPour(marque, code).trim()
   if (!bloc || !mention) return null
   if (mention.length + MARGE_MENTION <= bloc.longueurMax) return null
   return `la mention obligatoire fait a elle seule ${mention.length} caracteres, pour une longueur maximale de ${bloc.longueurMax} : les deux consignes sont inconciliables`
@@ -264,7 +373,7 @@ export function verifier(
    * L'exiger le faisait deborder de sa fourchette, et l'avertissement
    * n'aurait de toute facon ete lu par personne a cet endroit.
    */
-  options: { mentionObligatoire?: boolean } = {},
+  options: { mentionObligatoire?: boolean; langue?: string } = {},
 ): Probleme[] {
   const problemes: Probleme[] = []
   const t = (texte ?? '').trim()
@@ -277,7 +386,8 @@ export function verifier(
     return [{ code: 'json', message: 'le texte ressemble a du JSON mal interprete' }]
   }
 
-  const conflit = conflitMention(bloc, marque)
+  const langueCible = options.langue ?? LANGUE_DEFAUT
+  const conflit = conflitMention(bloc, marque, langueCible)
 
   if (bloc) {
     if (t.length < bloc.longueurMin) {
@@ -332,18 +442,27 @@ export function verifier(
     }
   }
 
-  if (options.mentionObligatoire !== false && marque?.mentionsLegales?.trim()) {
+  const mentionAttendue =
+    options.mentionObligatoire === false ? '' : mentionPour(marque, langueCible)
+
+  if (mentionAttendue) {
     // On ne compare pas mot a mot : le modele reformule parfois la ponctuation.
     // On verifie que les mots porteurs de la mention sont bien la.
+    //
+    // Le seuil est haut, et il doit l'etre. A 60 %, un texte anglais portant la
+    // mention FRANCAISE passait pour conforme : « trading » et « capital »
+    // s'ecrivent pareil dans les deux langues, deux mots sur trois suffisaient.
+    // Publier un avertissement dans la mauvaise langue est precisement ce que
+    // ce controle existe pour empecher.
     const normalise = sansAccent(t.toLowerCase())
-    const mots = sansAccent(marque.mentionsLegales.toLowerCase())
+    const mots = sansAccent(mentionAttendue.toLowerCase())
       .split(/[^a-z0-9]+/)
       .filter((m) => m.length >= 5)
     const presents = mots.filter((m) => normalise.includes(m)).length
-    if (mots.length > 0 && presents / mots.length < 0.6) {
+    if (mots.length > 0 && presents / mots.length < 0.75) {
       problemes.push({
         code: 'mention-manquante',
-        message: "l'avertissement obligatoire de la marque n'apparait pas",
+        message: "l'avertissement obligatoire de la marque n'apparait pas dans la bonne langue",
       })
     }
   }

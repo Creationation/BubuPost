@@ -1,3 +1,10 @@
+import {
+  normaliserHashtagsMarque,
+  normaliserMentions,
+  type HashtagsParLangue,
+  type MentionsParLangue,
+} from './langues'
+
 /**
  * Consignes de generation, cote application.
  *
@@ -31,8 +38,16 @@ export type ConsigneMarque = {
   vocabulairePrefere: string
   vocabulaireEvite: string
   appelAction: string
-  hashtags: string[]
-  mentionsLegales: string
+  /**
+   * Une liste par langue. Contrairement aux mentions, pas de repli sur le
+   * francais : un hashtag francais sous un texte anglais ne touche personne.
+   */
+  hashtags: HashtagsParLangue
+  /**
+   * Une mention par langue, indexee par code ISO.
+   * L'ancienne forme, une simple chaine, est lue comme du francais.
+   */
+  mentionsLegales: MentionsParLangue
 }
 
 export type LigneConsigne = {
@@ -99,8 +114,8 @@ export function marqueVide(): ConsigneMarque {
     vocabulairePrefere: '',
     vocabulaireEvite: '',
     appelAction: '',
-    hashtags: [],
-    mentionsLegales: '',
+    hashtags: {},
+    mentionsLegales: {},
   }
 }
 
@@ -142,8 +157,8 @@ export function normaliserMarque(brut: unknown): ConsigneMarque {
     vocabulairePrefere: String(m.vocabulairePrefere ?? ''),
     vocabulaireEvite: String(m.vocabulaireEvite ?? ''),
     appelAction: String(m.appelAction ?? ''),
-    hashtags: Array.isArray(m.hashtags) ? m.hashtags.map(String) : [],
-    mentionsLegales: String(m.mentionsLegales ?? ''),
+    hashtags: normaliserHashtagsMarque(m.hashtags),
+    mentionsLegales: normaliserMentions(m.mentionsLegales),
   }
 }
 
@@ -155,7 +170,7 @@ export function marqueVierge(m: ConsigneMarque): boolean {
     !m.ton.trim() &&
     !m.vocabulairePrefere.trim() &&
     !m.vocabulaireEvite.trim() &&
-    !m.mentionsLegales.trim()
+    Object.keys(m.mentionsLegales).length === 0
   )
 }
 

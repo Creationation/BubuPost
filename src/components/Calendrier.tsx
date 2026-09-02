@@ -26,6 +26,7 @@ import {
   type Vue,
 } from '../lib/calendrier'
 import { useSeconde } from '../lib/countdown'
+import { langue as trouverLangue, langueDe, teinteLangue } from '../lib/langues'
 
 /** Pastille de statut : une couleur, pas de texte, la place est comptee. */
 const PASTILLE: Record<string, string> = {
@@ -490,10 +491,13 @@ function Pastille({
   const bougeable = deplacable(post.status)
   const plateforme = post.accounts?.platform ?? ''
 
+  const codeLangue = langueDe(post, post.accounts)
+
   const titre = [
     formatHeure(post.scheduled_at),
     PLATFORM_LABEL[plateforme] ?? plateforme,
     post.accounts?.account_name ?? 'compte supprime',
+    `texte en ${trouverLangue(codeLangue).label.toLowerCase()}`,
     POST_STATUS_LABEL[post.status],
     post.campaign_id ? 'Fait partie d une campagne' : null,
     bougeable ? null : raisonNonDeplacable(post.status),
@@ -533,6 +537,11 @@ function Pastille({
       </span>
       <span className="min-w-0 flex-1 truncate text-mist-300">
         {post.accounts?.account_name ?? 'compte supprime'}
+      </span>
+      <span
+        className={`shrink-0 rounded px-1 text-[9px] font-semibold leading-4 ${teinteLangue(codeLangue)}`}
+      >
+        {trouverLangue(codeLangue).badge}
       </span>
       {post.campaign_id && (
         <span className={`shrink-0 text-[9px] ${teinte.texte}`} aria-hidden="true">
@@ -601,7 +610,8 @@ function Legende() {
     <p className="mt-3 text-xs text-mist-600">
       Clique un jour ou un creneau pour programmer, une publication pour l ouvrir. Glisse une
       publication en attente vers un autre creneau pour la reprogrammer. Le losange ◆ colore signale
-      les publications d une meme campagne.
+      les publications d une meme campagne, et les deux lettres colorees donnent la langue du
+      texte.
     </p>
   )
 }

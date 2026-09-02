@@ -24,6 +24,7 @@ import {
   type Account,
 } from '../lib/types'
 import { toLocalInput } from '../lib/format'
+import { LANGUES, teinteLangue, langue as trouverLangue } from '../lib/langues'
 import { Alert, Chip, ConfirmModal, EmptyState, Loading, Modal, PageHeader } from '../components/ui'
 
 const EMPTY: AccountInput = {
@@ -35,6 +36,7 @@ const EMPTY: AccountInput = {
   refresh_token: '',
   token_expiry: null,
   status: 'active',
+  language: 'fr',
 }
 
 function statusLabel(status: string): string {
@@ -183,9 +185,17 @@ export default function Accounts() {
                             {PLATFORM_LABEL[account.platform] ?? account.platform}
                           </p>
                         </div>
-                        <Chip className={ACCOUNT_STATUS_CLASS[account.status]}>
-                          {statusLabel(account.status)}
-                        </Chip>
+                        <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                          <Chip
+                            className={teinteLangue(account.language ?? 'fr')}
+                            title={`Publie en ${trouverLangue(account.language).label.toLowerCase()}`}
+                          >
+                            {trouverLangue(account.language).badge}
+                          </Chip>
+                          <Chip className={ACCOUNT_STATUS_CLASS[account.status]}>
+                            {statusLabel(account.status)}
+                          </Chip>
+                        </div>
                       </div>
 
                       {etatToken && (
@@ -421,6 +431,7 @@ function AccountForm({
             refresh_token: account.refresh_token ?? '',
             token_expiry: account.token_expiry,
             status: account.status,
+            language: account.language ?? 'fr',
           }
         : EMPTY,
     )
@@ -517,6 +528,27 @@ function AccountForm({
               <option value="EdgeSyncFX" />
               <option value="TchabaRimonda" />
             </datalist>
+          </div>
+
+          <div>
+            <label className="label" htmlFor="language">
+              Langue des publications
+            </label>
+            <select
+              id="language"
+              className="field"
+              value={form.language ?? 'fr'}
+              onChange={(e) => set('language', e.target.value)}
+            >
+              {LANGUES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs text-mist-600">
+              Langue par defaut des textes generes pour ce compte. Une campagne peut la surcharger.
+            </span>
           </div>
 
           <div>

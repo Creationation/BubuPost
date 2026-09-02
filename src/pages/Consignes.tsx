@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { generateCaption, listAccounts, listConsignes, saveConsigne } from '../lib/api'
 import { friendlyError } from '../lib/errors'
 import { PLATFORMS, type Account } from '../lib/types'
+import { LANGUE_DEFAUT, langue as trouverLangue } from '../lib/langues'
 import {
   blocVide,
   INTERDITS,
@@ -184,6 +185,12 @@ export default function Consignes() {
                 nom={choix}
                 consigne={marqueCourante ?? marqueVide()}
                 plateformes={plateformes}
+                languesUtilisees={[
+                  ...new Set([
+                    LANGUE_DEFAUT,
+                    ...accounts.filter((a) => a.brand === choix).map((a) => a.language ?? LANGUE_DEFAUT),
+                  ]),
+                ]}
                 occupe={enregistrement}
                 onEnregistrer={(v) => void enregistrer(v as unknown as Record<string, unknown>)}
               />
@@ -520,21 +527,36 @@ function EditeurMarque({
   nom,
   consigne,
   plateformes,
+  languesUtilisees,
   occupe,
   onEnregistrer,
 }: {
   nom: string
   consigne: ConsigneMarque
   plateformes: Record<string, ConsignePlateforme>
+  /** Les langues des comptes de cette marque, francais toujours compris. */
+  languesUtilisees: string[]
   occupe: boolean
   onEnregistrer: (c: ConsigneMarque) => void
 }) {
   const [etat, setEtat] = useState<ConsigneMarque>(consigne)
   const set = (changes: Partial<ConsigneMarque>) => setEtat({ ...etat, ...changes })
 
+  // Les langues a proposer : celles des comptes de la marque, plus celles qui
+  // ont deja une mention enregistree. On n'affiche pas les sept autres champs,
+  // qui ne serviraient a personne.
+  const languesMention = [
+    ...new Set([...languesUtilisees, ...Object.keys(etat.mentionsLegales)]),
+  ]
+
   // Un avertissement obligatoire plus long que la limite d'une plateforme rend
   // les deux consignes inconciliables. Mieux vaut le voir ici qu'apres coup.
-  const trop = plateformesTropCourtes(etat.mentionsLegales, plateformes)
+  const trop = languesMention.flatMap((code) =>
+    plateformesTropCourtes(etat.mentionsLegales[code] ?? '', plateformes).map((t) => ({
+      ...t,
+      code,
+    })),
+  )
 
   return (
     <section className="panel p-5">
@@ -587,7 +609,7 @@ function EditeurMarque({
           valeur={etat.vocabulaireEvite}
           lignes={2}
           onChange={(v) => set({ vocabulaireEvite: v })}
-          aide="Separes par des virgules. Un texte qui en contient un est regenere une fois avant d etre signale."
+          aide="Separes par des virgules, verifies dans toutes les langues. Si tu publies aussi en anglais, ajoute les equivalents anglais dans le meme champ."
           placeholder="argent facile, garanti, sans risque"
         />
         <Zone
@@ -598,45 +620,102 @@ function EditeurMarque({
           placeholder="Laisse vide si tu n en veux pas."
         />
 
-        <label className="block">
+        <div>
           <span className="label">Hashtags recurrents de la marque</span>
-          <input
-            className="field"
-            value={etat.hashtags.join(' ')}
-            onChange={(e) =>
-              set({
-                hashtags: e.target.value
-                  .split(/[\s,]+/)
-                  .map((h) => h.replace(/^#/, '').trim())
-                  .filter(Boolean),
-              })
-            }
-            placeholder="trading forex mt5"
-          />
+          <p className="mb-2 text-xs text-mist-600">
+            Une liste par langue. Un champ laisse vide veut dire « aucun impose » : le modele
+            choisit alors les siens, dans la bonne langue. La liste francaise ne sert jamais de
+            repli, un hashtag francais sous un texte anglais ne touche personne.
+          </p>
+
+          <div className="space-y-3">
+            {languesMention.map((code) => (
+              <label key={code} className="block">
+                <span className="label">{trouverLangue(code).label}</span>
+                <input
+                  className="field"
+                  value={(etat.hashtags[code] ?? []).join(' ')}
+                  onChange={(e) => {
+                    const liste = e.target.value
+                      .split(/[\s,]+/)
+                      .map((h) => h.replace(/^#/, '').trim())
+                      .filter(Boolean)
+                    const suite = { ...etat.hashtags }
+                    if (liste.length > 0) suite[code] = liste
+                    else delete suite[code]
+                    set({ hashtags: suite })
+                  }}
+                  placeholder={code === LANGUE_DEFAUT ? 'trading forex mt5' : ''}
+                />
+              </label>
+            ))}
+          </div>
+
           <span className="mt-1 block text-xs text-mist-600">
             Separes par des espaces, sans le caractere #. Ils viennent en plus de ceux que le modele
             propose, dans la limite fixee par la plateforme.
           </span>
-        </label>
+        </div>
 
         <div>
-          <Zone
-            label="Mentions legales a inclure systematiquement"
-            valeur={etat.mentionsLegales}
-            onChange={(v) => set({ mentionsLegales: v })}
-            aide={`${etat.mentionsLegales.trim().length} caracteres. Verifie apres generation : un texte qui l omet est regenere une fois.`}
-            placeholder="Le trading comporte un risque de perte en capital."
-          />
+          <span className="label">Mentions legales a inclure systematiquement</span>
+          <p className="mb-2 text-xs text-mist-600">
+            Une version par langue. Elle est reprise telle quelle, jamais traduite a la volee : un
+            avertissement juridique n est pas une phrase que le modele doit improviser. A defaut de
+            version dans la langue d une publication, c est la version francaise qui part.
+          </p>
 
-          {trop.length > 0 && (
-            <div className="mt-2">
-              <Alert kind="error">
-                Cette mention ne tient pas dans la limite de{' '}
-                {trop.map((t) => `${t.plateforme} (${t.max} caracteres)`).join(', ')}. Sur ces
-                plateformes, la mention sera conservee entiere et le texte depassera la longueur
-                maximale. Allonge la limite de la plateforme, ou raccourcis la mention.
-              </Alert>
-            </div>
+          <div className="space-y-3">
+            {languesMention.map((code) => {
+              const valeur = etat.mentionsLegales[code] ?? ''
+              const conflits = trop.filter((t) => t.code === code)
+              return (
+                <div key={code}>
+                  <Zone
+                    label={trouverLangue(code).label}
+                    valeur={valeur}
+                    lignes={2}
+                    onChange={(v) => {
+                      const suite = { ...etat.mentionsLegales }
+                      if (v.trim()) suite[code] = v
+                      else delete suite[code]
+                      set({ mentionsLegales: suite })
+                    }}
+                    aide={
+                      valeur.trim()
+                        ? `${valeur.trim().length} caracteres, comptes dans la longueur du texte.`
+                        : code === LANGUE_DEFAUT
+                          ? 'Sert aussi de repli pour les langues sans version propre.'
+                          : `Vide : les textes en ${trouverLangue(code).label.toLowerCase()} porteront la version francaise.`
+                    }
+                    placeholder={
+                      code === LANGUE_DEFAUT
+                        ? 'Le trading comporte un risque de perte en capital.'
+                        : ''
+                    }
+                  />
+
+                  {conflits.length > 0 && (
+                    <div className="mt-2">
+                      <Alert kind="error">
+                        Cette version ne tient pas dans la limite de{' '}
+                        {conflits.map((t) => `${t.plateforme} (${t.max} caracteres)`).join(', ')}.
+                        Sur ces plateformes elle sera conservee entiere et le texte depassera la
+                        longueur maximale. Allonge la limite de la plateforme, ou raccourcis la
+                        mention.
+                      </Alert>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {languesMention.length === 1 && (
+            <p className="mt-2 text-xs text-mist-600">
+              Seul le francais est propose : aucun compte de cette marque ne publie dans une autre
+              langue. Change la langue d un compte pour voir apparaitre son champ ici.
+            </p>
           )}
         </div>
       </div>

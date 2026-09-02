@@ -9,6 +9,7 @@ import {
 import { friendlyError } from '../lib/errors'
 import { PLATFORM_ICON, PLATFORM_LABEL, type Account } from '../lib/types'
 import { fromLocalInput, toLocalInput } from '../lib/format'
+import { LANGUES, LANGUE_DEFAUT, teinteLangue, langue as trouverLangue } from '../lib/langues'
 import { Alert, Modal } from './ui'
 
 /** Ce qu'on retient pour chaque compte coche, avant enregistrement. */
@@ -18,6 +19,8 @@ type Target = {
   caption: string
   hashtags: string
   generating: boolean
+  /** Code ISO. Part de la langue du compte, surchargeable ici. */
+  langue: string
   /** YouTube uniquement. */
   youtubeType: 'short' | 'video'
   titre: string
@@ -67,6 +70,23 @@ export default function PostComposer({
   // Publier neuf comptes a la meme seconde se voit : on propose d'espacer.
   const [ecart, setEcart] = useState(15)
 
+  /**
+   * Applique une langue a toutes les cibles.
+   *
+   * « Par compte » remet chacune sur la langue de son propre compte, ce qui est
+   * le cas courant : c'est le reglage du compte qui sait a qui il s'adresse.
+   */
+  function appliquerLangue(code: string | null) {
+    setTargets((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).map(([id, t]) => [
+          id,
+          { ...t, langue: code ?? accountById[id]?.language ?? LANGUE_DEFAUT },
+        ]),
+      ),
+    )
+  }
+
   useEffect(() => {
     if (!open) return
     setVideoUrl('')
@@ -88,6 +108,12 @@ export default function PostComposer({
     [usable],
   )
 
+  /** La langue partagee par toutes les cibles, ou null si elles different. */
+  const langueCommune = useMemo(() => {
+    const codes = new Set(Object.values(targets).map((t) => t.langue))
+    return codes.size === 1 ? [...codes][0] : null
+  }, [targets])
+
   const selected = Object.keys(targets)
   const accountById = useMemo(
     () => Object.fromEntries(accounts.map((a) => [a.id, a])),
@@ -101,15 +127,29 @@ export default function PostComposer({
         delete next[account.id]
         return next
       }
-      // On reprend l'horaire de la premiere cible deja cochee, pour ne pas
-      // avoir a ressaisir la meme heure cinq fois.
-      const first = Object.values(prev)[0]
+
+      // L'horaire part de la premiere cible cochee, decale de l'ecart choisi.
+      //
+      // C'etait un bouton qu'il fallait penser a cliquer, et neuf comptes
+      // coches partaient donc a la meme seconde : neuf envois dans un seul
+      // passage du scheduler, 130 secondes d'execution, et un cycle qui
+      // tournait encore quand le suivant demarrait. L'etalement doit etre le
+      // comportement par defaut, pas une option.
+      const existantes = Object.values(prev)
+      const premiere = existantes[0]
+      const base = premiere?.scheduledLocal ?? depart ?? defaultSchedule()
+      const quand =
+        premiere && ecart > 0
+          ? toLocalInput(new Date(new Date(base).getTime() + existantes.length * ecart * 60_000).toISOString())
+          : base
+
       next[account.id] = {
         accountId: account.id,
-        scheduledLocal: first?.scheduledLocal ?? depart ?? defaultSchedule(),
+        scheduledLocal: quand,
         caption: '',
         hashtags: '',
         generating: false,
+        langue: account.language ?? LANGUE_DEFAUT,
         youtubeType: 'short',
         titre: '',
         miniature: '',
@@ -146,6 +186,7 @@ export default function PostComposer({
         subject: subject.trim(),
         platform: account.platform,
         brand: account.brand,
+        language: targets[accountId]?.langue,
         youtube_type: targets[accountId]?.youtubeType,
       })
       patch(accountId, {
@@ -188,6 +229,7 @@ export default function PostComposer({
           brand: accountById[id]?.brand,
           account_name: accountById[id]?.account_name,
           youtube_type: targets[id]?.youtubeType,
+          language: targets[id]?.langue,
         })),
       })
 
@@ -217,6 +259,31 @@ export default function PostComposer({
     } finally {
       setGeneratingAll(false)
     }
+  }
+
+  /**
+   * Reetale tout quand l'ecart change.
+   *
+   * Sans cela, le champ afficherait 20 minutes pendant que les publications
+   * resteraient espacees des 15 d'avant.
+   */
+  function changerEcart(minutes: number) {
+    setEcart(minutes)
+    setTargets((prev) => {
+      const ids = Object.keys(prev)
+      if (ids.length === 0) return prev
+      const base = new Date(prev[ids[0]].scheduledLocal).getTime()
+      if (Number.isNaN(base)) return prev
+      return Object.fromEntries(
+        ids.map((id, i) => [
+          id,
+          {
+            ...prev[id],
+            scheduledLocal: toLocalInput(new Date(base + i * minutes * 60_000).toISOString()),
+          },
+        ]),
+      )
+    })
   }
 
   /** Espace les horaires de la premiere cible vers les suivantes. */
@@ -269,6 +336,7 @@ export default function PostComposer({
           scheduled_at: fromLocalInput(targets[id].scheduledLocal),
           caption: targets[id].caption.trim(),
           hashtags: parseHashtags(targets[id].hashtags),
+          language: targets[id].langue,
           youtube_type: estYoutube ? targets[id].youtubeType : null,
           title: estYoutube ? targets[id].titre : null,
           thumbnail_url:
@@ -384,7 +452,7 @@ export default function PostComposer({
                     min={0}
                     max={240}
                     value={ecart}
-                    onChange={(e) => setEcart(Math.max(0, Number(e.target.value) || 0))}
+                    onChange={(e) => changerEcart(Math.max(0, Number(e.target.value) || 0))}
                     className="w-12 bg-transparent text-center text-mist-100 outline-none"
                     aria-label="Minutes entre chaque publication"
                   />
@@ -393,9 +461,28 @@ export default function PostComposer({
                     type="button"
                     className="ml-1 rounded px-1.5 py-0.5 text-brand-400 hover:bg-ink-800"
                     onClick={etalerHoraires}
+                    title="Recalcule tous les horaires depuis celui de la premiere publication"
                   >
-                    appliquer
+                    reappliquer
                   </button>
+                </span>
+                <span className="flex items-center gap-1.5 rounded-lg border border-ink-700 px-2 py-1 text-xs text-mist-500">
+                  Langue
+                  <select
+                    className="bg-transparent text-mist-100 outline-none"
+                    value={langueCommune ?? ''}
+                    onChange={(e) => appliquerLangue(e.target.value || null)}
+                    aria-label="Langue de toutes les publications"
+                  >
+                    <option value="" className="bg-ink-850">
+                      Par compte
+                    </option>
+                    {LANGUES.map((l) => (
+                      <option key={l.code} value={l.code} className="bg-ink-850">
+                        {l.label}
+                      </option>
+                    ))}
+                  </select>
                 </span>
                 <button
                   type="button"
@@ -440,14 +527,33 @@ export default function PostComposer({
                           {PLATFORM_LABEL[account.platform]}
                         </span>
                       </p>
-                      <button
-                        type="button"
-                        className="btn btn-ghost !py-1 !text-xs"
-                        onClick={() => void generateFor(id)}
-                        disabled={target.generating}
-                      >
-                        {target.generating ? 'Generation...' : 'Generer la legende'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <select
+                          className={`rounded-lg border px-2 py-1 text-xs font-semibold ${teinteLangue(target.langue)}`}
+                          value={target.langue}
+                          onChange={(e) => patch(id, { langue: e.target.value })}
+                          aria-label={`Langue du texte pour ${account.account_name}`}
+                          title={`Texte ecrit en ${trouverLangue(target.langue).label.toLowerCase()}`}
+                        >
+                          {LANGUES.map((l) => (
+                            <option
+                              key={l.code}
+                              value={l.code}
+                              className="bg-ink-850 text-mist-100"
+                            >
+                              {l.badge} {l.label}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="btn btn-ghost !py-1 !text-xs"
+                          onClick={() => void generateFor(id)}
+                          disabled={target.generating}
+                        >
+                          {target.generating ? 'Generation...' : 'Generer la legende'}
+                        </button>
+                      </div>
                     </div>
 
                     {account.platform === 'youtube' && (

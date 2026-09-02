@@ -22,6 +22,7 @@ export type Database = {
           created_at: string
           external_account_id: string | null
           id: string
+          language: string
           platform: string
           refresh_token: string | null
           scope: string | null
@@ -36,6 +37,7 @@ export type Database = {
           created_at?: string
           external_account_id?: string | null
           id?: string
+          language?: string
           platform: string
           refresh_token?: string | null
           scope?: string | null
@@ -50,6 +52,7 @@ export type Database = {
           created_at?: string
           external_account_id?: string | null
           id?: string
+          language?: string
           platform?: string
           refresh_token?: string | null
           scope?: string | null
@@ -109,6 +112,7 @@ export type Database = {
           error_message: string | null
           hashtags: string[] | null
           id: string
+          language: string | null
           next_attempt_at: string | null
           platform_post_id: string | null
           published_at: string | null
@@ -130,6 +134,7 @@ export type Database = {
           error_message?: string | null
           hashtags?: string[] | null
           id?: string
+          language?: string | null
           next_attempt_at?: string | null
           platform_post_id?: string | null
           published_at?: string | null
@@ -151,6 +156,7 @@ export type Database = {
           error_message?: string | null
           hashtags?: string[] | null
           id?: string
+          language?: string | null
           next_attempt_at?: string | null
           platform_post_id?: string | null
           published_at?: string | null

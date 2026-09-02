@@ -15,6 +15,8 @@ import {
   ARBITRAGE,
   blocPour,
   doublons,
+  LANGUE_DEFAUT,
+  nomLangue,
   ressembleAJson,
   texteBloc,
   texteMarque,
@@ -32,7 +34,9 @@ const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-opus-5'
 
 const REGLES_FIXES = `Regles absolues, quelles que soient les consignes :
-- Ecris dans la langue demandee, jamais une autre.
+- Chaque texte est ECRIT dans la langue indiquee pour sa cible, jamais traduit depuis une autre. Emploie les tournures, les images et les references naturelles de cette langue. Un texte en anglais ne doit pas se lire comme du francais traduit, et inversement.
+- Les hashtags suivent la langue de leur texte : un texte anglais porte des hashtags anglais, un texte francais des hashtags francais. Ce ne sont pas les memes mots et ils ne touchent pas le meme public. Seuls les noms propres et les termes que la marque impose restent tels quels.
+- Un titre suit lui aussi la langue de sa cible.
 - Pas de guillemets autour du texte, pas de preambule, pas de commentaire sur ton travail.
 - Reste concret et specifique au sujet fourni. Pas de formule creuse ni de promesse vague.`
 
@@ -60,7 +64,9 @@ part d'une erreur courante. Change aussi la structure : longueur, rythme, presen
 appel a l'action. Deux textes qui se ressemblent seraient reperes comme du contenu duplique, ce
 qui est exactement ce qu'on veut eviter.
 
-Varie egalement les hashtags d'un texte a l'autre, tout en restant pertinent.`
+Varie egalement les hashtags d'un texte a l'autre, tout en restant pertinent.
+
+Si deux cibles n'ont pas la meme langue, ce ne sont pas deux versions d'un meme texte : chacune est ecrite pour son public, avec son propre angle. La difference de langue ne dispense pas de la difference de fond.`
 
 type Cible = {
   id: string
@@ -68,6 +74,8 @@ type Cible = {
   brand?: string
   account_name?: string
   youtube_type?: 'short' | 'video'
+  /** Code ISO de la langue de sortie. Absent vaut francais. */
+  language?: string
   /**
    * Texte deja en place, quand on reecrit une publication existante.
    * Evite de redemander le sujet de la video : le texte actuel le porte deja.
@@ -82,6 +90,7 @@ type Body = {
   language?: string
   tone?: string
   youtube_type?: 'short' | 'video'
+  language?: string
   /** Mode lot : une variante distincte par cible. */
   targets?: Cible[]
 }
@@ -195,7 +204,8 @@ function referenceCible(c: Cible, i: number): string {
         ? ' en video classique, avec un titre distinct de la description'
         : ' en Short'
       : ''
-  return `${i + 1}. id="${c.id}"${nom} : plateforme ${c.platform}${variante}${marque}.${existant}`
+  const langue = ` A ECRIRE EN ${nomLangue(c.language ?? LANGUE_DEFAUT).toUpperCase()}.`
+  return `${i + 1}. id="${c.id}"${nom} : plateforme ${c.platform}${variante}${marque}.${langue}${existant}`
 }
 
 type Variante = {
@@ -215,7 +225,8 @@ function controler(variantes: Variante[], cibles: Cible[], consignes: Consignes)
     const marque = cible?.brand ? (consignes.marques.get(cible.brand) ?? null) : null
     const bloc = cible ? blocTexte(consignes, cible.platform, cible.youtube_type) : null
 
-    const problemes = verifier(v.caption, v.hashtags, bloc, marque)
+    const langueCible = cible?.language ?? LANGUE_DEFAUT
+    const problemes = verifier(v.caption, v.hashtags, bloc, marque, { langue: langueCible })
 
     // Le titre d'une video YouTube longue a ses propres regles, notamment une
     // fourchette de longueur etroite pour ne pas etre tronque en resultat.
@@ -224,7 +235,10 @@ function controler(variantes: Variante[], cibles: Cible[], consignes: Consignes)
       if (!v.title) {
         problemes.push({ code: 'titre-manquant', message: 'le titre de la video est absent' })
       } else {
-        for (const p of verifier(v.title, [], titre, marque, { mentionObligatoire: false })) {
+        for (const p of verifier(v.title, [], titre, marque, {
+          mentionObligatoire: false,
+          langue: langueCible,
+        })) {
           problemes.push({ code: `titre-${p.code}`, message: `titre : ${p.message}` })
         }
       }
@@ -233,8 +247,19 @@ function controler(variantes: Variante[], cibles: Cible[], consignes: Consignes)
     return { ...v, problemes }
   })
 
-  // La similarite se juge entre variantes, pas variante par variante.
-  for (const paire of doublons(controlees.map((v) => ({ id: v.id, caption: v.caption })))) {
+  // La similarite ne se compare qu'a langue egale. Deux textes de langues
+  // differentes ne partagent pas assez de caracteres pour se ressembler au
+  // sens de la mesure, et un doublon francais ne se cache pas dans un texte
+  // anglais : les comparer ne ferait que du bruit.
+  const parLangue = new Map<string, Array<{ id: string; caption: string }>>()
+  for (const v of controlees) {
+    const code = parId.get(v.id)?.language ?? LANGUE_DEFAUT
+    const liste = parLangue.get(code)
+    if (liste) liste.push({ id: v.id, caption: v.caption })
+    else parLangue.set(code, [{ id: v.id, caption: v.caption }])
+  }
+
+  for (const paire of [...parLangue.values()].flatMap((liste) => doublons(liste))) {
     for (const id of [paire.a, paire.b]) {
       const v = controlees.find((x) => x.id === id)
       const autre = id === paire.a ? paire.b : paire.a
@@ -273,7 +298,6 @@ Deno.serve(async (req) => {
 
   const subject = (body.subject ?? '').trim()
 
-  const language = body.language ?? 'francais'
   const tone = body.tone ?? ''
   const brandGlobale = body.brand ?? ''
 
@@ -287,13 +311,18 @@ Deno.serve(async (req) => {
   // Le mode simple est ramene a une cible unique : un seul chemin de code pour
   // les consignes, les controles et la relance.
   const toutes: Cible[] = enLot
-    ? cibles.map((c) => ({ ...c, brand: c.brand || brandGlobale }))
+    ? cibles.map((c) => ({
+        ...c,
+        brand: c.brand || brandGlobale,
+        language: c.language || body.language || LANGUE_DEFAUT,
+      }))
     : [
         {
           id: 'unique',
           platform: body.platform ?? 'instagram',
           brand: brandGlobale,
           youtube_type: body.youtube_type,
+          language: body.language || LANGUE_DEFAUT,
         },
       ]
 
@@ -327,11 +356,20 @@ Deno.serve(async (req) => {
     }
   }
 
+  const languesUtilisees = [...new Set(toutes.map((c) => c.language ?? LANGUE_DEFAUT))]
+
   const blocsMarque: string[] = []
   for (const m of marquesUtiles) {
     const consigne = consignes.marques.get(m)
     if (!consigne) continue
-    const texte = texteMarque(m, consigne)
+    // On ne passe que les langues reellement employees : inutile de faire lire
+    // au modele l'avertissement neerlandais pour une campagne francophone.
+    const langues = [
+      ...new Set(
+        toutes.filter((c) => c.brand === m).map((c) => c.language ?? LANGUE_DEFAUT),
+      ),
+    ]
+    const texte = texteMarque(m, consigne, langues)
     if (texte) blocsMarque.push(texte)
   }
 
@@ -341,7 +379,6 @@ Deno.serve(async (req) => {
 
   const contexte = [
     subject ? `Sujet de la video : ${subject}` : '',
-    `Langue : ${language}`,
     tone ? `Ton demande pour cette video en particulier : ${tone}` : '',
   ].filter(Boolean)
 

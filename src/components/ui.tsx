@@ -1,8 +1,21 @@
 import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 
-export function Chip({ className = '', children }: { className?: string; children: ReactNode }) {
-  return <span className={`chip ${className}`}>{children}</span>
+export function Chip({
+  className = '',
+  title,
+  children,
+}: {
+  className?: string
+  /** Infobulle : une pastille de deux lettres a souvent besoin d'etre explicitee. */
+  title?: string
+  children: ReactNode
+}) {
+  return (
+    <span className={`chip ${className}`} title={title}>
+      {children}
+    </span>
+  )
 }
 
 export function PageHeader({
