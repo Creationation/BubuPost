@@ -57,6 +57,24 @@ export async function listPosts(): Promise<PostWithAccount[]> {
   ) as PostWithAccount[]
 }
 
+/**
+ * Une legende ne doit jamais ressembler a du JSON.
+ *
+ * Dernier rempart avant la base : si une reponse mal formee passait malgre
+ * tout, mieux vaut refuser d'enregistrer que publier une structure technique
+ * sur un compte. La correction se fait a la main, en connaissance de cause.
+ */
+function refuserJson(caption: string, ou: string): void {
+  const t = caption.trim()
+  if (!t) return
+  if (t.startsWith('{') || t.startsWith('[') || t.includes('"caption"') || t.includes('"hashtags"')) {
+    console.error(`Legende refusee (${ou}), elle ressemble a du JSON :`, t.slice(0, 200))
+    throw new Error(
+      "Cette legende contient du JSON brut au lieu du texte. Relance la generation, et previens-moi si ca se reproduit.",
+    )
+  }
+}
+
 /** Une cible = un compte, avec son horaire et sa legende propres. */
 export type TargetInput = {
   account_id: string
@@ -74,6 +92,8 @@ export async function createPostGroup(
   videoUrl: string,
   targets: TargetInput[],
 ): Promise<{ count: number; campaignId: string }> {
+  for (const t of targets) refuserJson(t.caption, 'creation de campagne')
+
   const campaignId = crypto.randomUUID()
   const rows = targets.map((t) => ({
     campaign_id: campaignId,
@@ -107,6 +127,7 @@ export async function updatePost(
   id: string,
   patch: { caption?: string | null; hashtags?: string[] | null; scheduled_at?: string; video_url?: string },
 ): Promise<void> {
+  if (typeof patch.caption === 'string') refuserJson(patch.caption, 'modification')
   unwrap(await supabase.from('posts').update(patch).eq('id', id).select('id'))
 }
 

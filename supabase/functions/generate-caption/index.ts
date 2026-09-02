@@ -72,23 +72,41 @@ type Body = {
   targets?: Cible[]
 }
 
-/** Extrait le premier objet ou tableau JSON du texte, meme entoure de bruit. */
-function extraireJson(texte: string): unknown {
-  for (const [ouvre, ferme] of [
-    ['[', ']'],
-    ['{', '}'],
-  ]) {
-    const debut = texte.indexOf(ouvre)
-    const fin = texte.lastIndexOf(ferme)
-    if (debut !== -1 && fin > debut) {
-      try {
-        return JSON.parse(texte.slice(debut, fin + 1))
-      } catch {
-        // On tente la forme suivante.
-      }
-    }
+/**
+ * Extrait le JSON du texte, en sachant quelle forme on attend.
+ *
+ * Chercher « le premier crochet » etait un piege : dans
+ * {"caption": "...", "hashtags": ["a"]}, le premier crochet est celui des
+ * hashtags. On en tirait le tableau ["a"], donc un objet sans champ caption,
+ * et le repli renvoyait le JSON entier comme legende.
+ */
+function extraireJson(texte: string, forme: 'objet' | 'tableau'): unknown {
+  const [ouvre, ferme] = forme === 'tableau' ? ['[', ']'] : ['{', '}']
+
+  const debut = texte.indexOf(ouvre)
+  const fin = texte.lastIndexOf(ferme)
+  if (debut === -1 || fin <= debut) return null
+
+  try {
+    return JSON.parse(texte.slice(debut, fin + 1))
+  } catch {
+    return null
   }
-  return null
+}
+
+/**
+ * Une legende ne doit jamais ressembler a du JSON.
+ * Mieux vaut ne rien renvoyer que publier une structure technique sur le
+ * compte de quelqu'un.
+ */
+function ressembleAJson(texte: string): boolean {
+  const t = texte.trim()
+  return (
+    t.startsWith('{') ||
+    t.startsWith('[') ||
+    t.includes('"caption"') ||
+    t.includes('"hashtags"')
+  )
 }
 
 /** Diego ne veut aucun tiret cadratin : ceinture et bretelles apres le modele. */
@@ -182,7 +200,7 @@ Deno.serve(async (req) => {
       .map((block) => (block as { text: string }).text)
       .join('\n')
 
-    const parse = extraireJson(texte)
+    const parse = extraireJson(texte, enLot ? 'tableau' : 'objet')
     const usage = {
       input_tokens: response.usage.input_tokens,
       output_tokens: response.usage.output_tokens,
@@ -195,10 +213,12 @@ Deno.serve(async (req) => {
       for (const item of liste as Array<Record<string, unknown>>) {
         const id = String(item?.id ?? '')
         if (!id) continue
-        parId.set(id, {
-          caption: nettoyer(item.caption as string),
-          hashtags: normaliserHashtags(item.hashtags),
-        })
+        const caption = nettoyer(item.caption as string)
+        if (ressembleAJson(caption)) {
+          console.error('Legende rejetee, elle ressemble a du JSON', id, caption.slice(0, 120))
+          continue
+        }
+        parId.set(id, { caption, hashtags: normaliserHashtags(item.hashtags) })
       }
 
       // On renvoie une entree par cible demandee, meme si le modele en a
@@ -219,8 +239,16 @@ Deno.serve(async (req) => {
     }
 
     const objet = (parse ?? {}) as Record<string, unknown>
-    const caption = nettoyer(objet.caption as string) || nettoyer(texte)
+    // Repli sur le texte brut seulement s'il ne ressemble pas a du JSON :
+    // c'est exactement par la que le JSON entier se retrouvait en legende.
+    const brut = nettoyer(texte)
+    const caption = nettoyer(objet.caption as string) || (ressembleAJson(brut) ? '' : brut)
+
     if (!caption) return json({ error: 'Legende vide, reessaie' }, 502)
+    if (ressembleAJson(caption)) {
+      console.error('Legende rejetee, elle ressemble a du JSON', caption.slice(0, 150))
+      return json({ error: 'La reponse du modele etait mal formee, relance la generation' }, 502)
+    }
 
     return json({
       caption,
