@@ -292,6 +292,50 @@ export async function generateCaption(input: {
   return { caption: data.caption, hashtags: data.hashtags ?? [], title: data.title ?? null }
 }
 
+export type QuotaYoutube = {
+  utilise: number
+  total: number
+  restant: number
+  coutEnvoi: number
+  coutMiniature: number
+  videosRestantes: number
+}
+
+/**
+ * Etat du quota YouTube du jour.
+ *
+ * Six publications consomment 9600 unites sur 10 000 : la marge est de 400,
+ * soit moins qu une seule relance. Ce chiffre doit rester sous les yeux, pas
+ * dormir dans les logs.
+ */
+export async function quotaYoutube(): Promise<QuotaYoutube> {
+  const [{ data: utilise }, reglages] = await Promise.all([
+    supabase.rpc('quota_du_jour', { p_platform: 'youtube' }),
+    listSettings(),
+  ])
+
+  const q = (reglages.quota_youtube ?? {}) as {
+    quota_journalier?: number
+    cout_envoi?: number
+    cout_miniature?: number
+  }
+
+  const total = q.quota_journalier ?? 10000
+  const coutEnvoi = q.cout_envoi ?? 1600
+  const coutMiniature = q.cout_miniature ?? 50
+  const used = typeof utilise === 'number' ? utilise : 0
+  const restant = Math.max(0, total - used)
+
+  return {
+    utilise: used,
+    total,
+    restant,
+    coutEnvoi,
+    coutMiniature,
+    videosRestantes: Math.floor(restant / coutEnvoi),
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Administration
 // ---------------------------------------------------------------------------

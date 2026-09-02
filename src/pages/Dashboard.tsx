@@ -13,6 +13,7 @@ import { Alert, EmptyState, Loading, PageHeader } from '../components/ui'
 import { BadgeStatut, LigneAttente, ProchainePublication } from '../components/Attente'
 import { useLiveStatuses } from '../lib/useLiveStatuses'
 import { useScheduler } from '../lib/scheduler'
+import { QuotaYoutube } from '../components/QuotaYoutube'
 
 function Stat({
   label,
@@ -130,6 +131,9 @@ export default function Dashboard() {
       )}
 
       <ProchainePublication posts={posts} />
+
+      {/* Affiche seulement si une chaine YouTube existe : sinon c'est du bruit. */}
+      <QuotaYoutube actif={accounts.some((a) => a.platform === 'youtube')} />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat

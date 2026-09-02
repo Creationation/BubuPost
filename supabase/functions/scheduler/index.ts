@@ -198,7 +198,43 @@ async function handleFailure(
   const reason = err instanceof Error ? err.message : String(err)
   const attempts = post.attempts + 1
   const max = settings.retry.max_attempts
-  const canRetry = (platformErr?.retryable ?? false) && attempts < max
+
+  /**
+   * YouTube ne se relance JAMAIS tout seul.
+   *
+   * Le quota du jour est de 10 000 unites et six publications en consomment
+   * deja 9600 : il reste 400 unites, alors qu'une seule relance en coute 1600.
+   * Une relance automatique ferait donc perdre une publication de la journee
+   * pour tenter d'en sauver une autre. C'est a Diego de trancher, prevenu par
+   * Telegram, pas au scheduler de decider a sa place.
+   */
+  const relanceInterdite = post.accounts.platform === 'youtube'
+  const canRetry = !relanceInterdite && (platformErr?.retryable ?? false) && attempts < max
+
+  /**
+   * Le quota reserve est rendu si l'envoi n'a jamais commence.
+   *
+   * On reserve 1600 unites avant d'appeler Google, parce qu'il facture meme un
+   * appel qui echoue. Mais si l'echec survient AVANT le moindre appel a
+   * l'API des videos, un jeton refuse par exemple, Google n'a rien facture :
+   * garder la reservation ferait perdre une publication de la journee pour
+   * rien. Avec 400 unites de marge, ca compte.
+   *
+   * L'absence de conteneur est le signe : il n'est pose qu'une fois l'envoi
+   * accepte par YouTube.
+   */
+  if (post.accounts.platform === 'youtube' && !post.container_id) {
+    const cout = settings.quotaYoutube.cout_envoi
+    const { data: total } = await db.rpc('consommer_quota', {
+      p_platform: 'youtube',
+      p_units: -cout,
+    })
+    await log(db, post.id, 'quota_youtube_rendu', { rendu: cout, total })
+  }
+
+  const messageComplet = relanceInterdite
+    ? `${reason} Aucune relance automatique sur YouTube : elle couterait 1600 unites de quota, sur les 400 qui restent une fois tes 6 publications faites. A toi de relancer depuis l'onglet Publications si tu le souhaites.`
+    : reason
 
   if (canRetry) {
     const backoff = settings.retry.backoff_minutes
@@ -221,7 +257,12 @@ async function handleFailure(
   } else {
     await db
       .from('posts')
-      .update({ status: 'failed', attempts, error_message: reason, next_attempt_at: null })
+      .update({
+        status: 'failed',
+        attempts,
+        error_message: messageComplet,
+        next_attempt_at: null,
+      })
       .eq('id', post.id)
     await log(db, post.id, 'failed', { reason, attempts, detail: platformErr?.detail ?? null })
   }
@@ -236,7 +277,7 @@ async function handleFailure(
       brand: post.accounts.brand,
       videoUrl: post.video_url,
       scheduledAt: post.scheduled_at,
-      reason,
+      reason: messageComplet,
       definitif: true,
     })
   }

@@ -486,10 +486,20 @@ export default function PostComposer({
                             onChange={(e) => patch(id, { miniature: e.target.value })}
                             placeholder="https://... (optionnel)"
                           />
-                          <p className="mt-1 text-xs text-mist-600">
-                            Optionnelle, et elle coute 50 unites de quota en plus des 1600 de
-                            l'envoi.
-                          </p>
+                          {target.miniature.trim() ? (
+                            <p className="mt-1 rounded-lg border border-warn-600/40 bg-warn-600/10 px-2.5 py-2 text-xs text-warn-400">
+                              Cette miniature coutera 50 unites de quota en plus des 1600 de
+                              l'envoi. Avec 6 publications par jour tu consommes deja 9600 unites
+                              sur 10 000 : six miniatures en ajoutent 300, et il ne reste alors
+                              presque plus rien. Verifie le compteur sur le dashboard avant de
+                              programmer.
+                            </p>
+                          ) : (
+                            <p className="mt-1 text-xs text-mist-600">
+                              Optionnelle. Elle coute 50 unites de quota en plus des 1600 de
+                              l'envoi.
+                            </p>
+                          )}
                         </div>
                       </div>
                     )}
