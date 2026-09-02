@@ -24,6 +24,12 @@ export type Nommage = {
   ordre: string[]
   surNonConforme: 'rejeter' | 'defauts'
   defauts: { marque: string; langue: string }
+  /**
+   * Codes de langue acceptes dans un nom de fichier.
+   * Un code hors de cette liste met le fichier de cote : mieux vaut corriger
+   * le nom que publier dans une langue tiree au hasard.
+   */
+  languesReconnues: string[]
 }
 
 export type Cadence = {
@@ -59,7 +65,7 @@ export type ConfigAuto = {
 export const CHAMPS_NOM: { cle: string; label: string; aide: string }[] = [
   { cle: 'marque', label: 'Marque', aide: 'EdgeSyncFX, BigBossGrowth, CosmicSucces' },
   { cle: 'sujet', label: 'Sujet', aide: 'Les tirets deviennent des espaces' },
-  { cle: 'langue', label: 'Langue', aide: 'fr, en, es...' },
+  { cle: 'langue', label: 'Langue', aide: 'en ou fr, en deux lettres' },
   { cle: 'variante', label: 'Variante', aide: 'Libre, sert a distinguer deux versions' },
 ]
 
@@ -80,7 +86,10 @@ export function configVide(): ConfigAuto {
       separateur: '_',
       ordre: ['marque', 'sujet', 'langue'],
       surNonConforme: 'rejeter',
-      defauts: { marque: '', langue: 'fr' },
+      // L'anglais, parce que les trois comptes publient en anglais. Seule
+      // l'interface de l'app est en francais, ce qui n'a rien a voir.
+      defauts: { marque: '', langue: 'en' },
+      languesReconnues: ['en', 'fr'],
     },
     profils: [{ nom: 'Tous les comptes', plateformes: [], comptes: [] }],
     cadence: {
@@ -114,8 +123,12 @@ export function normaliserConfig(brut: unknown): ConfigAuto {
       surNonConforme: c.nommage?.surNonConforme === 'defauts' ? 'defauts' : 'rejeter',
       defauts: {
         marque: c.nommage?.defauts?.marque ?? '',
-        langue: c.nommage?.defauts?.langue || 'fr',
+        langue: c.nommage?.defauts?.langue || 'en',
       },
+      languesReconnues:
+        Array.isArray(c.nommage?.languesReconnues) && c.nommage.languesReconnues.length > 0
+          ? c.nommage.languesReconnues
+          : v.nommage.languesReconnues,
     },
     profils: Array.isArray(c.profils) && c.profils.length > 0
       ? c.profils.map((p) => ({
@@ -156,15 +169,27 @@ export function normaliserConfig(brut: unknown): ConfigAuto {
   }
 }
 
-/** Un exemple de nom, construit depuis la regle en cours. */
-export function exempleNom(nommage: Nommage): string {
-  const exemples: Record<string, string> = {
-    marque: 'EdgeSyncFX',
-    sujet: 'stop-loss-trop-serre',
-    langue: 'fr',
-    variante: 'v2',
-  }
-  return nommage.ordre.map((c) => exemples[c] ?? c).join(nommage.separateur || '_') + '.mp4'
+/**
+ * Des exemples de noms, construits depuis la regle en cours.
+ *
+ * Un par marque : voir les trois cote a cote montre mieux ce qui change et ce
+ * qui reste qu'un exemple unique.
+ */
+export const EXEMPLES_NOM: { marque: string; sujet: string; langue: string }[] = [
+  { marque: 'EdgeSyncFX', sujet: 'backtest-vs-real-account', langue: 'en' },
+  { marque: 'BigBossGrowth', sujet: 'discipline-beats-motivation', langue: 'en' },
+  { marque: 'CosmicSucces', sujet: 'stop-deciding-emotionally', langue: 'en' },
+]
+
+export function exempleNom(nommage: Nommage, i = 0): string {
+  const e = EXEMPLES_NOM[i % EXEMPLES_NOM.length]
+  const valeurs: Record<string, string> = { ...e, variante: 'v2' }
+  return nommage.ordre.map((c) => valeurs[c] ?? c).join(nommage.separateur || '_') + '.mp4'
+}
+
+/** Les trois exemples, avec la regle en cours. */
+export function exemplesNom(nommage: Nommage): string[] {
+  return EXEMPLES_NOM.map((_, i) => exempleNom(nommage, i))
 }
 
 /** Depuis combien de temps le watcher n'a pas donne signe de vie. */

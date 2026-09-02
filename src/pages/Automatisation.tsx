@@ -24,6 +24,7 @@ import {
   CHAMPS_NOM,
   configVide,
   exempleNom,
+  exemplesNom,
   JOURS_CADENCE,
   normaliserConfig,
   silenceDepuis,
@@ -60,8 +61,8 @@ export default function Automatisation() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const reload = useCallback(async () => {
-    setLoading(true)
+  const reload = useCallback(async (premier = false) => {
+    if (premier) setLoading(true)
     try {
       const [c, d, i, a, p, posts] = await Promise.all([
         lireConfigAuto(),
@@ -81,12 +82,12 @@ export default function Automatisation() {
     } catch (err) {
       setError(friendlyError(err))
     } finally {
-      setLoading(false)
+      if (premier) setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    void reload()
+    void reload(true)
   }, [reload])
 
   const marques = useMemo(
@@ -197,49 +198,81 @@ export default function Automatisation() {
 
       {loading ? (
         <Loading />
-      ) : onglet === 'suivi' ? (
-        <Suivi
-          ping={ping}
-          silence={silence}
-          imports={imports}
-          aValider={aValider}
-          onRejouer={(id) =>
-            void agir(
-              () => rejouerImport(id),
-              'Fichier oublie du journal, il sera repris au prochain passage',
-            )
-          }
-          onValider={(c) =>
-            void agir(async () => {
-              await validerCampagne(c)
-            }, 'Campagne validee, elle part en file d attente')
-          }
-          onRejeter={(c) =>
-            void agir(async () => {
-              await rejeterCampagne(c)
-            }, 'Campagne rejetee, ses publications sont annulees')
-          }
-        />
-      ) : onglet === 'dossiers' ? (
-        <Dossiers
-          dossiers={dossiers}
-          profils={config.profils}
-          marques={marques}
-          busy={busy}
-          onCreer={(d) => void agir(async () => void (await creerDossier(d)), 'Dossier ajoute')}
-          onMaj={(id, d) => void agir(() => majDossier(id, d), 'Dossier mis a jour')}
-          onSupprimer={(id) => void agir(() => supprimerDossier(id), 'Dossier retire')}
-        />
-      ) : onglet === 'nommage' ? (
-        <Nommage config={config} busy={busy} onEnregistrer={enregistrer} />
-      ) : onglet === 'ciblage' ? (
-        <Ciblage config={config} comptes={comptes} busy={busy} onEnregistrer={enregistrer} />
-      ) : onglet === 'cadence' ? (
-        <CadenceOnglet config={config} marques={marques} busy={busy} onEnregistrer={enregistrer} />
-      ) : onglet === 'validation' ? (
-        <Validation config={config} marques={marques} busy={busy} onEnregistrer={enregistrer} />
       ) : (
-        <ContenuOnglet config={config} marques={marques} busy={busy} onEnregistrer={enregistrer} />
+        <>
+          {/*
+            Tous les panneaux restent montes, les inactifs sont masques.
+            Les demonter effacait la saisie en cours des qu'on changeait
+            d'onglet, sans le dire : on tapait, on allait voir ailleurs, et on
+            revenait sur l'ancienne valeur.
+          */}
+          <div hidden={onglet !== 'suivi'}>
+            <Suivi
+              ping={ping}
+              silence={silence}
+              imports={imports}
+              aValider={aValider}
+              onRejouer={(id) =>
+                void agir(
+                  () => rejouerImport(id),
+                  'Fichier oublie du journal, il sera repris au prochain passage',
+                )
+              }
+              onValider={(c) =>
+                void agir(async () => {
+                  await validerCampagne(c)
+                }, 'Campagne validee, elle part en file d attente')
+              }
+              onRejeter={(c) =>
+                void agir(async () => {
+                  await rejeterCampagne(c)
+                }, 'Campagne rejetee, ses publications sont annulees')
+              }
+            />
+          </div>
+
+          <div hidden={onglet !== 'dossiers'}>
+            <Dossiers
+              dossiers={dossiers}
+              profils={config.profils}
+              marques={marques}
+              busy={busy}
+              onCreer={(d) => void agir(async () => void (await creerDossier(d)), 'Dossier ajoute')}
+              onMaj={(id, d) => void agir(() => majDossier(id, d), 'Dossier mis a jour')}
+              onSupprimer={(id) => void agir(() => supprimerDossier(id), 'Dossier retire')}
+            />
+          </div>
+
+          <div hidden={onglet !== 'nommage'}>
+            <Nommage config={config} busy={busy} onEnregistrer={enregistrer} />
+          </div>
+
+          <div hidden={onglet !== 'ciblage'}>
+            <Ciblage config={config} comptes={comptes} busy={busy} onEnregistrer={enregistrer} />
+          </div>
+
+          <div hidden={onglet !== 'cadence'}>
+            <CadenceOnglet
+              config={config}
+              marques={marques}
+              busy={busy}
+              onEnregistrer={enregistrer}
+            />
+          </div>
+
+          <div hidden={onglet !== 'validation'}>
+            <Validation config={config} marques={marques} busy={busy} onEnregistrer={enregistrer} />
+          </div>
+
+          <div hidden={onglet !== 'contenu'}>
+            <ContenuOnglet
+              config={config}
+              marques={marques}
+              busy={busy}
+              onEnregistrer={enregistrer}
+            />
+          </div>
+        </>
       )}
     </div>
   )
@@ -649,10 +682,17 @@ function Nommage({
     <div className="space-y-5">
       <section className="panel p-5">
         <h2 className="mb-1 font-semibold">La regle de nommage</h2>
-        <p className="mb-4 text-sm text-mist-500">
-          Ce que le watcher lit dans le nom d un fichier. Un exemple avec la regle actuelle :{' '}
-          <span className="font-mono text-mist-100">{exempleNom(etat)}</span>
+        <p className="mb-2 text-sm text-mist-500">
+          Ce que le watcher lit dans le nom d un fichier. Avec la regle actuelle, ces trois noms
+          sont valides :
         </p>
+        <ul className="mb-4 space-y-1">
+          {exemplesNom(etat).map((e) => (
+            <li key={e} className="font-mono text-xs text-mist-100">
+              {e}
+            </li>
+          ))}
+        </ul>
 
         <div className="space-y-4">
           <label className="block max-w-xs">
@@ -683,6 +723,11 @@ function Nommage({
                     <span className="flex-1 text-sm">
                       {champ?.label ?? cle}
                       <span className="ml-2 text-xs text-mist-600">{champ?.aide}</span>
+                      {cle === 'marque' && (
+                        <span className="ml-2 text-xs text-mist-600">
+                          la casse n a pas d importance
+                        </span>
+                      )}
                     </span>
                     <button
                       className="rounded px-1.5 text-mist-500 hover:bg-ink-800 hover:text-mist-100"
@@ -724,6 +769,28 @@ function Nommage({
               ))}
             </div>
           </div>
+
+          <label className="block max-w-xs">
+            <span className="label">Langues reconnues</span>
+            <input
+              className="field font-mono"
+              value={etat.languesReconnues.join(' ')}
+              onChange={(e) =>
+                set({
+                  languesReconnues: e.target.value
+                    .split(/[\s,]+/)
+                    .map((l) => l.trim().toLowerCase())
+                    .filter(Boolean),
+                })
+              }
+              placeholder="en fr"
+            />
+            <span className="mt-1 block text-xs text-mist-600">
+              Codes a deux lettres, separes par des espaces. Un fichier portant une langue absente
+              de cette liste est mis de cote : mieux vaut corriger le nom que publier dans une
+              langue tiree au hasard.
+            </span>
+          </label>
 
           <div>
             <span className="label">Si le nom ne suit pas la regle</span>
@@ -1340,6 +1407,9 @@ function CadenceOnglet({
         </div>
 
         <div className="mt-5 flex justify-end">
+          <span className="mr-auto text-xs text-mist-600">
+            Tes modifications ne sont enregistrees qu avec ce bouton.
+          </span>
           <button
             className="btn btn-primary"
             disabled={busy}
@@ -1615,6 +1685,9 @@ function ContenuOnglet({
         </div>
 
         <div className="mt-5 flex justify-end">
+          <span className="mr-auto text-xs text-mist-600">
+            Tes modifications ne sont enregistrees qu avec ce bouton.
+          </span>
           <button
             className="btn btn-primary"
             disabled={busy}

@@ -26,7 +26,7 @@
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders, json } from '../_shared/cors.ts'
 import { jwtRole, memeSecret } from '../_shared/auth.ts'
-import { lireNom, type Config } from '../_shared/automatisation.ts'
+import { lireNom, marqueCanonique, type Config } from '../_shared/automatisation.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -98,6 +98,47 @@ async function ingerer(db: SupabaseClient, body: CorpsIngestion) {
     await journal(db, body, 'rejete', 'aucune marque, ni dans le nom ni en valeur par defaut', {})
     return json({ ok: false, rejete: true, error: 'Aucune marque determinee' })
   }
+
+  // La marque du fichier est ramenee a la forme exacte des comptes :
+  // « edgesyncfx » et « EdgeSyncFX » designent la meme chose.
+  const { data: toutesMarques } = await db.from('accounts').select('brand')
+  const connues = [...new Set((toutesMarques ?? []).map((a: { brand: string }) => a.brand))]
+  const canonique = marqueCanonique(marque, connues)
+
+  if (!canonique) {
+    await journal(
+      db,
+      body,
+      'rejete',
+      `marque « ${marque} » inconnue, les marques existantes sont : ${connues.join(', ')}`,
+      { marque, sujet, langue },
+    )
+    return json({
+      ok: false,
+      rejete: true,
+      error: `Marque inconnue : ${marque}. Connues : ${connues.join(', ')}`,
+    })
+  }
+  marque = canonique
+
+  // La langue lue doit faire partie des langues reconnues, sinon on ne saura
+  // pas dans quelle langue ecrire et le texte partirait au hasard.
+  const reconnues = config.nommage.languesReconnues ?? ['fr', 'en']
+  if (langue && !reconnues.includes(langue)) {
+    await journal(
+      db,
+      body,
+      'rejete',
+      `langue « ${langue} » non reconnue, attendu : ${reconnues.join(', ')}`,
+      { marque, sujet, langue },
+    )
+    return json({
+      ok: false,
+      rejete: true,
+      error: `Langue non reconnue : ${langue}. Attendu : ${reconnues.join(', ')}`,
+    })
+  }
+  langue = langue || config.nommage.defauts.langue || 'en'
   if (!sujet) {
     await journal(db, body, 'rejete', 'aucun sujet lisible dans le nom', { marque })
     return json({ ok: false, rejete: true, error: 'Aucun sujet determine' })

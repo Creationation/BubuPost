@@ -20,6 +20,8 @@ export type Config = {
     ordre: string[]
     surNonConforme: 'rejeter' | 'defauts'
     defauts: { marque: string; langue: string }
+    /** Codes acceptes dans un nom de fichier. Le reste est mis de cote. */
+    languesReconnues?: string[]
   }
   profils: Profil[]
   cadence: {
@@ -77,6 +79,22 @@ export type Lecture = {
 }
 
 /**
+ * Ramene une marque lue dans un nom de fichier a sa forme exacte.
+ *
+ * Les comptes portent « EdgeSyncFX ». Un fichier nomme « edgesyncfx_... » doit
+ * marcher : personne ne respecte la casse en nommant un fichier a la volee, et
+ * une comparaison stricte donnerait « aucun compte actif pour edgesyncfx »,
+ * message d'autant plus deroutant que la marque a l'air correcte.
+ *
+ * Renvoie null si aucune marque connue ne correspond.
+ */
+export function marqueCanonique(lue: string, connues: string[]): string | null {
+  const cible = lue.trim().toLowerCase()
+  if (!cible) return null
+  return connues.find((m) => m.toLowerCase() === cible) ?? null
+}
+
+/**
  * Ce qu'on tire d'un nom de fichier.
  *
  * Le sujet remplace les tirets par des espaces : « stop-loss-trop-serre » se
@@ -116,7 +134,11 @@ export function lireNom(nom: string, nommage: Config['nommage']): Lecture {
  * ce qui permet un profil « test sur un seul compte ».
  */
 export function ciblesPour(comptes: Compte[], marque: string, profil: Profil | null): Compte[] {
-  const actifs = comptes.filter((c) => c.brand === marque && c.status === 'active')
+  // Comparaison insensible a la casse : la marque a normalement deja ete
+  // ramenee a sa forme exacte, mais une entree de bibliotheque corrigee a la
+  // main peut encore porter une casse differente.
+  const cible = marque.toLowerCase()
+  const actifs = comptes.filter((c) => c.brand.toLowerCase() === cible && c.status === 'active')
   if (!profil) return actifs
 
   if (profil.comptes && profil.comptes.length > 0) {
