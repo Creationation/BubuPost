@@ -41,11 +41,18 @@ function parseHashtags(raw: string): string[] {
 export default function PostComposer({
   open,
   accounts,
+  depart,
   onClose,
   onCreated,
 }: {
   open: boolean
   accounts: Account[]
+  /**
+   * Creneau pre-rempli, au format d'un input datetime-local.
+   * Vient du calendrier : cliquer un jour ou une heure doit proposer ce
+   * moment-la, pas « dans une heure ».
+   */
+  depart?: string | null
   onClose: () => void
   onCreated: (count: number) => void
 }) {
@@ -99,7 +106,7 @@ export default function PostComposer({
       const first = Object.values(prev)[0]
       next[account.id] = {
         accountId: account.id,
-        scheduledLocal: first?.scheduledLocal ?? defaultSchedule(),
+        scheduledLocal: first?.scheduledLocal ?? depart ?? defaultSchedule(),
         caption: '',
         hashtags: '',
         generating: false,

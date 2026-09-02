@@ -146,6 +146,33 @@ export async function updatePost(
   unwrap(await supabase.from('posts').update(patch).eq('id', id).select('id'))
 }
 
+/**
+ * Reprogramme plusieurs publications d'un coup, depuis le calendrier.
+ *
+ * En serie et non en parallele : onze requetes lancees ensemble sur la meme
+ * table se marchent dessus, et si l'une echoue on ne sait plus lesquelles sont
+ * passees. Ici on s'arrete a la premiere erreur en sachant exactement ou.
+ */
+export async function deplacerPosts(
+  maj: Array<{ id: string; scheduled_at: string }>,
+): Promise<number> {
+  let faits = 0
+  for (const { id, scheduled_at } of maj) {
+    // next_attempt_at remis a zero : une publication en erreur portait peut-etre
+    // encore une date de relance anterieure, qui la ferait repartir aussitot au
+    // lieu d'attendre le nouveau creneau.
+    unwrap(
+      await supabase
+        .from('posts')
+        .update({ scheduled_at, next_attempt_at: null })
+        .eq('id', id)
+        .select('id'),
+    )
+    faits++
+  }
+  return faits
+}
+
 /** Annule un post encore non publie. */
 export async function cancelPost(id: string): Promise<void> {
   unwrap(
