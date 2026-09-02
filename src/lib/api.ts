@@ -2,7 +2,7 @@ import { supabase } from './supabase'
 import { errorMessage } from './errors'
 import type { Account, PostWithAccount, Profile, PublishLog } from './types'
 import type { LigneConsigne, Probleme } from './consignes'
-import type { ConfigAuto, Dossier, Import } from './automatisation'
+import type { ConfigAuto, Dossier, Import, Video } from './automatisation'
 
 /** Toute erreur supabase remonte comme une vraie Error, lisible a l'ecran. */
 function unwrap<T>(res: { data: T | null; error: unknown }): T {
@@ -747,6 +747,141 @@ export async function testerNom(fichier: string): Promise<LectureNom> {
   if (error) throw new Error(errorMessage(error))
   if (!data || data.error || !data.lecture) throw new Error(data?.error ?? 'Reponse vide')
   return data.lecture
+}
+
+// ---------------------------------------------------------------------------
+// Bibliotheque
+// ---------------------------------------------------------------------------
+
+/**
+ * La file, dans l'ordre exact ou le moteur piochera.
+ *
+ * Les prioritaires d'abord, puis le rang. C'est le meme tri que la fonction
+ * cadence : l'ecran doit montrer l'ordre reel, pas un ordre plausible.
+ */
+export async function listerBibliotheque(): Promise<Video[]> {
+  return unwrap(
+    await supabase
+      .from('bibliotheque')
+      .select('*')
+      .order('prioritaire', { ascending: false })
+      .order('rang', { ascending: true }),
+  )
+}
+
+export type VideoInput = {
+  marque?: string
+  sujet?: string
+  langue?: string | null
+  profil?: string | null
+  prioritaire?: boolean
+  statut?: 'en_file' | 'en_pause'
+  rang?: number
+}
+
+export async function majVideo(id: string, input: VideoInput): Promise<void> {
+  unwrap(await supabase.from('bibliotheque').update(input).eq('id', id).select('id'))
+}
+
+export async function supprimerVideo(id: string): Promise<void> {
+  const { error } = await supabase.from('bibliotheque').delete().eq('id', id)
+  if (error) throw new Error(errorMessage(error))
+}
+
+/**
+ * Deplace une video entre deux autres.
+ *
+ * Le nouveau rang est la moyenne des rangs voisins : une seule ecriture, au
+ * lieu de renumeroter toute la file. Quand l'ecart devient trop petit pour un
+ * flottant, on demande une renumerotation avant de recommencer.
+ */
+export async function deplacerVideo(
+  id: string,
+  marque: string,
+  avant: number | null,
+  apres: number | null,
+): Promise<void> {
+  let rang: number
+  if (avant == null && apres == null) rang = 1000
+  else if (avant == null) rang = apres! - 1000
+  else if (apres == null) rang = avant + 1000
+  else rang = (avant + apres) / 2
+
+  if (avant != null && apres != null && Math.abs(apres - avant) < 1e-6) {
+    await supabase.rpc('renumeroter_bibliotheque', { p_marque: marque })
+    throw new Error('La file a ete renumerotee, refais le deplacement')
+  }
+
+  unwrap(await supabase.from('bibliotheque').update({ rang }).eq('id', id).select('id'))
+}
+
+export type Prevision = {
+  id: string
+  marque: string
+  sujet: string
+  fichier: string
+  prioritaire: boolean
+  position: number
+  creneau: string | null
+}
+
+export type EtatReserve = {
+  marque: string
+  reste: number
+  seuil: number
+  creneauSaute: string | null
+}
+
+/** Ce que le moteur ferait, calcule par le moteur lui-meme. */
+export async function apercuCadence(): Promise<{
+  previsions: Prevision[]
+  reserve: EtatReserve[]
+}> {
+  const { data, error } = await supabase.functions.invoke<{
+    previsions?: Prevision[]
+    reserve?: EtatReserve[]
+    error?: string
+  }>('cadence', { body: { action: 'apercu' } })
+
+  if (error) throw new Error(errorMessage(error))
+  if (!data || data.error) throw new Error(data?.error ?? 'Reponse vide')
+  return { previsions: data.previsions ?? [], reserve: data.reserve ?? [] }
+}
+
+/** Programme une video a une date choisie, hors cadence. */
+export async function programmerVideo(id: string, quand: string): Promise<{ publications: number }> {
+  const { data, error } = await supabase.functions.invoke<{
+    publications?: number
+    error?: string
+  }>('cadence', { body: { action: 'manuelle', id, quand } })
+
+  if (error) {
+    const contexte = (error as { context?: Response }).context
+    if (contexte && typeof contexte.json === 'function') {
+      try {
+        const corps = await contexte.json()
+        if (corps?.error) throw new Error(corps.error)
+      } catch (err) {
+        if (err instanceof Error && err.message && !err.message.includes('non-2xx')) throw err
+      }
+    }
+    throw new Error(errorMessage(error))
+  }
+  if (!data || data.error) throw new Error(data?.error ?? 'Reponse vide')
+  return { publications: data.publications ?? 0 }
+}
+
+/** Declenche un passage du moteur, sans attendre le cron. */
+export async function lancerMoteur(): Promise<{ creees: number; ignore?: string }> {
+  const { data, error } = await supabase.functions.invoke<{
+    creees?: number
+    ignore?: string
+    error?: string
+  }>('cadence', { body: { action: 'moteur', forcer: true } })
+
+  if (error) throw new Error(errorMessage(error))
+  if (!data || data.error) throw new Error(data?.error ?? 'Reponse vide')
+  return { creees: data.creees ?? 0, ignore: data.ignore }
 }
 
 export async function runSchedulerNow(): Promise<unknown> {

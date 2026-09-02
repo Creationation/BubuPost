@@ -1,4 +1,9 @@
-// Le point d'entree du watcher local.
+// Le point d'entree du watcher local. INGESTION UNIQUEMENT.
+//
+// Il ne cree plus de campagne. Il depose la video dans la bibliotheque, et
+// c'est tout. La programmation appartient au moteur de cadence, qui pioche
+// dans une file que Diego ordonne : l'ordre de publication est un choix
+// editorial, il ne doit pas dependre de l'ordre alphabetique d'un dossier.
 //
 // SECURITE, en un paragraphe. Le watcher tourne sur le PC de Diego et n'a
 // AUCUN acces a la base. Il ne possede pas de session Supabase : la politique
@@ -11,7 +16,7 @@
 //   config      lire les regles, et signaler qu'il est vivant
 //   upload-url  demander un creneau d'envoi signe, valable quelques minutes,
 //               pour UN chemin precis
-//   import      soumettre une video deposee
+//   ingest      deposer une video dans la bibliotheque
 //   ping        signaler qu'il est vivant, sans rien demander
 // Il ne peut ni lire un compte, ni lire une publication, ni supprimer quoi que
 // ce soit. La cle service_role reste ici, cote serveur.
@@ -21,59 +26,12 @@
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders, json } from '../_shared/cors.ts'
 import { jwtRole, memeSecret } from '../_shared/auth.ts'
-import { notifyTelegram } from '../_shared/notify.ts'
+import { lireNom, type Config } from '../_shared/automatisation.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 const WATCHER_TOKEN = Deno.env.get('WATCHER_TOKEN') ?? ''
-
-/** Cout d'un envoi YouTube, en unites de quota. Identique au scheduler. */
-const COUT_YOUTUBE = 1600
-const QUOTA_YOUTUBE = 10_000
-
-const JOURS = ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam']
-
-type Profil = { nom: string; plateformes?: string[]; comptes?: string[] }
-
-type Config = {
-  actif: boolean
-  nommage: {
-    separateur: string
-    ordre: string[]
-    surNonConforme: 'rejeter' | 'defauts'
-    defauts: { marque: string; langue: string }
-  }
-  profils: Profil[]
-  cadence: {
-    parMarque: Record<string, Record<string, number>>
-    defaut: Record<string, number>
-    plage: { debut: string; fin: string }
-    ecartMinutes: number
-    afflux: 'etaler' | 'auPlusTot'
-  }
-  quotas: { surDepassement: 'reporter' | 'ignorer' }
-  validation: { parDefaut: boolean; parMarque: Record<string, boolean> }
-  contenu: {
-    cta: Record<string, Record<string, string[]>>
-    liens: Record<string, Record<string, string>>
-    position: 'debut' | 'fin'
-  }
-  alerteSilenceHeures: number
-}
-
-type Compte = {
-  id: string
-  platform: string
-  brand: string
-  account_name: string
-  language: string | null
-  status: string
-}
-
-// ---------------------------------------------------------------------------
-// Lecture des reglages
-// ---------------------------------------------------------------------------
 
 async function lireConfig(db: SupabaseClient): Promise<Config> {
   const { data } = await db.from('automation_config').select('reglages').eq('id', true).single()
@@ -89,217 +47,10 @@ async function lireDossiers(db: SupabaseClient) {
 }
 
 // ---------------------------------------------------------------------------
-// Lecture du nom de fichier
+// Ingestion
 // ---------------------------------------------------------------------------
 
-export type Lecture = {
-  marque: string
-  sujet: string
-  langue: string
-  variante: string
-  conforme: boolean
-  manquants: string[]
-}
-
-/**
- * Ce qu'on tire d'un nom de fichier.
- *
- * L'ordre et le separateur sont configures dans l'app. Le sujet remplace les
- * tirets par des espaces : « stop-loss-trop-serre » se lit « stop loss trop
- * serre », ce qui donne un sujet utilisable tel quel par la generation.
- */
-export function lireNom(nom: string, nommage: Config['nommage']): Lecture {
-  const sansExtension = nom.replace(/\.[^.]+$/, '')
-  const sep = nommage.separateur || '_'
-  const morceaux = sansExtension.split(sep).map((m) => m.trim()).filter(Boolean)
-
-  const lu: Record<string, string> = {}
-  nommage.ordre.forEach((champ, i) => {
-    if (morceaux[i]) lu[champ] = morceaux[i]
-  })
-
-  const manquants = nommage.ordre.filter((champ) => !lu[champ])
-
-  return {
-    marque: lu.marque ?? '',
-    sujet: (lu.sujet ?? '').replace(/[-+]/g, ' ').trim(),
-    langue: (lu.langue ?? '').toLowerCase(),
-    variante: lu.variante ?? '',
-    conforme: manquants.length === 0,
-    manquants,
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Ciblage
-// ---------------------------------------------------------------------------
-
-/**
- * Les comptes vises pour une marque, selon le profil demande.
- *
- * Un profil sans plateforme ni compte precis vaut « tous les comptes de la
- * marque ». Les comptes nommes l'emportent sur le filtre de plateforme : c'est
- * ce qui permet un profil « test sur un seul compte ».
- */
-export function ciblesPour(comptes: Compte[], marque: string, profil: Profil | null): Compte[] {
-  const actifs = comptes.filter((c) => c.brand === marque && c.status === 'active')
-  if (!profil) return actifs
-
-  if (profil.comptes && profil.comptes.length > 0) {
-    return actifs.filter((c) => profil.comptes!.includes(c.id))
-  }
-  if (profil.plateformes && profil.plateformes.length > 0) {
-    return actifs.filter((c) => profil.plateformes!.includes(c.platform))
-  }
-  return actifs
-}
-
-// ---------------------------------------------------------------------------
-// Planification
-// ---------------------------------------------------------------------------
-
-function minutesDepuisMinuit(hhmm: string): number {
-  const [h, m] = hhmm.split(':').map(Number)
-  return (h || 0) * 60 + (m || 0)
-}
-
-/**
- * Le premier creneau libre pour une marque.
- *
- * On avance jour par jour : un jour est disponible tant qu'il porte moins de
- * publications que la cadence prevue pour ce jour de la semaine. On se place
- * ensuite dans la plage horaire autorisee.
- *
- * En mode « auPlusTot » on ignore la cadence et on programme tout de suite,
- * ce qui reste utile pour rattraper un retard.
- */
-export function prochainCreneau(
-  cadence: Config['cadence'],
-  dejaParJour: Record<string, number>,
-  marque: string,
-  depuis: Date,
-): Date {
-  if (cadence.afflux === 'auPlusTot') {
-    // Deux minutes devant : le temps que la video finisse de se televerser et
-    // que le prochain passage du scheduler arrive.
-    return new Date(depuis.getTime() + 2 * 60_000)
-  }
-
-  const parMarque = cadence.parMarque?.[marque] ?? cadence.defaut ?? {}
-  const debut = minutesDepuisMinuit(cadence.plage?.debut ?? '09:00')
-  const fin = minutesDepuisMinuit(cadence.plage?.fin ?? '21:00')
-
-  const jour = new Date(depuis)
-  jour.setSeconds(0, 0)
-
-  // Trente jours d'avance au maximum : au-dela, c'est que la cadence est a
-  // zero partout, et il vaut mieux le dire que programmer dans deux ans.
-  for (let i = 0; i < 30; i++) {
-    const cle = cleJour(jour)
-    const plafond = parMarque[JOURS[jour.getDay()]] ?? 0
-    const deja = dejaParJour[cle] ?? 0
-
-    if (plafond > 0 && deja < plafond) {
-      // On repartit les publications du jour dans la plage autorisee.
-      const pas = plafond > 1 ? (fin - debut) / plafond : 0
-      const minute = Math.round(debut + pas * deja)
-      const creneau = new Date(jour)
-      creneau.setHours(Math.floor(minute / 60), minute % 60, 0, 0)
-
-      if (creneau.getTime() > depuis.getTime()) return creneau
-      // Le creneau theorique est deja passe : on prend le suivant du jour, ou
-      // on bascule au lendemain si la plage est finie.
-      const rattrapage = new Date(depuis.getTime() + 5 * 60_000)
-      if (minutesDepuisMinuit(`${rattrapage.getHours()}:${rattrapage.getMinutes()}`) <= fin) {
-        return rattrapage
-      }
-    }
-
-    jour.setDate(jour.getDate() + 1)
-    jour.setHours(0, 0, 0, 0)
-  }
-
-  return new Date(depuis.getTime() + 60 * 60_000)
-}
-
-function cleJour(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
-
-// ---------------------------------------------------------------------------
-// Contenu : appel a l'action, lien, position
-// ---------------------------------------------------------------------------
-
-/**
- * L'appel a l'action a employer, en alternant entre les variantes.
- *
- * L'alternance suit le nombre de publications deja faites sur ce couple
- * marque plus plateforme : deux campagnes de suite ne se terminent donc pas
- * par la meme phrase, ce qui se verrait.
- */
-export function choisirCta(
-  contenu: Config['contenu'],
-  marque: string,
-  platform: string,
-  rang: number,
-): string {
-  const variantes = contenu?.cta?.[marque]?.[platform] ?? []
-  if (variantes.length === 0) return ''
-  return variantes[rang % variantes.length]
-}
-
-/** Assemble le texte final : legende, appel a l'action, lien. */
-export function assembler(
-  caption: string,
-  cta: string,
-  lien: string,
-  position: 'debut' | 'fin',
-): string {
-  const bloc = [cta, lien].filter((x) => x && x.trim()).join(' ')
-  if (!bloc) return caption
-  return position === 'debut' ? `${bloc}\n\n${caption}` : `${caption}\n\n${bloc}`
-}
-
-// ---------------------------------------------------------------------------
-// Quotas
-// ---------------------------------------------------------------------------
-
-/**
- * Ce qui reste possible aujourd'hui sur une plateforme.
- *
- * YouTube compte a part : son quota est celui du projet Google, partage par
- * toutes les chaines, et il se lit dans quota_usage. Les autres se comptent
- * par compte sur 24 h glissantes.
- */
-async function placeRestante(
-  db: SupabaseClient,
-  platform: string,
-  accountId: string,
-  limites: Record<string, number>,
-): Promise<number> {
-  if (platform === 'youtube') {
-    const { data } = await db.rpc('quota_du_jour', { p_platform: 'youtube' })
-    const consomme = Number(data ?? 0)
-    return Math.floor((QUOTA_YOUTUBE - consomme) / COUT_YOUTUBE)
-  }
-
-  const depuis = new Date(Date.now() - 86_400_000).toISOString()
-  const { count } = await db
-    .from('posts')
-    .select('id', { count: 'exact', head: true })
-    .eq('account_id', accountId)
-    .in('status', ['pending', 'processing', 'published'])
-    .gte('scheduled_at', depuis)
-
-  return (limites[platform] ?? 25) - (count ?? 0)
-}
-
-// ---------------------------------------------------------------------------
-// Import
-// ---------------------------------------------------------------------------
-
-type CorpsImport = {
+type CorpsIngestion = {
   fichier: string
   dossier?: string
   taille?: number
@@ -309,7 +60,7 @@ type CorpsImport = {
   profil?: string
 }
 
-async function importer(db: SupabaseClient, body: CorpsImport) {
+async function ingerer(db: SupabaseClient, body: CorpsIngestion) {
   const config = await lireConfig(db)
 
   if (config.actif === false) {
@@ -323,11 +74,7 @@ async function importer(db: SupabaseClient, body: CorpsImport) {
   let langue = lecture.langue
   let sujet = lecture.sujet
 
-  const manquants = [...lecture.manquants]
-  if (body.marque) {
-    const i = manquants.indexOf('marque')
-    if (i !== -1) manquants.splice(i, 1)
-  }
+  const manquants = lecture.manquants.filter((m) => !(m === 'marque' && body.marque))
 
   if (manquants.length > 0) {
     if (config.nommage.surNonConforme === 'rejeter') {
@@ -356,184 +103,64 @@ async function importer(db: SupabaseClient, body: CorpsImport) {
     return json({ ok: false, rejete: true, error: 'Aucun sujet determine' })
   }
 
-  // ---- les comptes vises -------------------------------------------------
+  // Le rang place la video a la FIN de la file de sa marque. Diego la
+  // remontera s'il le souhaite : c'est son role, pas celui du watcher.
+  const { data: rang } = await db.rpc('rang_suivant', { p_marque: marque })
 
-  const { data: comptes } = await db
-    .from('accounts')
-    .select('id, platform, brand, account_name, language, status')
-
-  const profil = config.profils?.find((p) => p.nom === body.profil) ?? null
-  let cibles = ciblesPour((comptes ?? []) as Compte[], marque, profil)
-
-  if (cibles.length === 0) {
-    await journal(db, body, 'rejete', `aucun compte actif pour la marque ${marque}`, {
-      marque,
-      sujet,
-      langue,
-    })
-    return json({ ok: false, rejete: true, error: `Aucun compte actif pour ${marque}` })
-  }
-
-  // ---- les quotas --------------------------------------------------------
-
-  const { data: reglages } = await db.from('app_settings').select('value').eq('key', 'limits').single()
-  const limites = (reglages?.value ?? {}) as Record<string, number>
-
-  const ecartees: string[] = []
-  const retenues: Compte[] = []
-
-  for (const c of cibles) {
-    const place = await placeRestante(db, c.platform, c.id, limites)
-    if (place > 0) {
-      retenues.push(c)
-      continue
-    }
-    if (config.quotas?.surDepassement === 'ignorer') {
-      ecartees.push(`${c.account_name} (${c.platform}, quota atteint, ignore)`)
-    } else {
-      // Reporter : on garde la cible, le creneau tombera demain de toute
-      // facon puisque la cadence du jour est deja pleine.
-      retenues.push(c)
-      ecartees.push(`${c.account_name} (${c.platform}, quota atteint, reporte)`)
-    }
-  }
-  cibles = retenues
-
-  if (cibles.length === 0) {
-    await journal(db, body, 'rejete', 'toutes les plateformes sont au quota', { marque, sujet, langue })
-    return json({ ok: false, rejete: true, error: 'Toutes les plateformes sont au quota' })
-  }
-
-  // ---- le creneau --------------------------------------------------------
-
-  const { data: prevus } = await db
-    .from('posts')
-    .select('scheduled_at, accounts!inner(brand)')
-    .in('status', ['a_valider', 'pending', 'processing'])
-    .gte('scheduled_at', new Date().toISOString())
-
-  const dejaParJour: Record<string, number> = {}
-  for (const p of (prevus ?? []) as Array<{ scheduled_at: string; accounts: { brand: string } }>) {
-    if (p.accounts?.brand !== marque) continue
-    const cle = cleJour(new Date(p.scheduled_at))
-    dejaParJour[cle] = (dejaParJour[cle] ?? 0) + 1
-  }
-
-  const depart = prochainCreneau(config.cadence, dejaParJour, marque, new Date())
-  const ecart = config.cadence?.ecartMinutes ?? 15
-
-  // ---- les textes --------------------------------------------------------
-
-  const langueDe = (c: Compte) => langue || c.language || 'fr'
-
-  const generation = await fetch(`${SUPABASE_URL}/functions/v1/generate-caption`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      subject: sujet,
-      targets: cibles.map((c) => ({
-        id: c.id,
-        platform: c.platform,
-        brand: c.brand,
-        account_name: c.account_name,
-        language: langueDe(c),
-        youtube_type: c.platform === 'youtube' ? 'short' : undefined,
-      })),
-    }),
-  })
-
-  const textes = await generation.json().catch(() => ({}))
-  if (!generation.ok || !Array.isArray(textes.results)) {
-    await journal(db, body, 'rejete', `generation des textes impossible : ${textes.error ?? generation.status}`, {
-      marque,
-      sujet,
-      langue,
-    })
-    return json({ ok: false, rejete: true, error: textes.error ?? 'Generation impossible' }, 502)
-  }
-
-  const parId = new Map(
-    (textes.results as Array<{ id: string; caption: string; hashtags: string[]; title?: string }>)
-      .map((r) => [r.id, r]),
-  )
-
-  // ---- l'ecriture --------------------------------------------------------
-
-  // Le rang sert a alterner les appels a l'action : on compte ce qui existe
-  // deja pour ce couple marque plus plateforme.
-  const { count: rangBase } = await db
-    .from('posts')
-    .select('id', { count: 'exact', head: true })
-    .not('campaign_id', 'is', null)
-
-  const validation =
-    config.validation?.parMarque?.[marque] ?? config.validation?.parDefaut ?? true
-
-  const campaignId = crypto.randomUUID()
-  const lignes = cibles.map((c, i) => {
-    const texte = parId.get(c.id)
-    const cta = choisirCta(config.contenu, marque, c.platform, (rangBase ?? 0) + i)
-    const lien = config.contenu?.liens?.[marque]?.[c.platform] ?? ''
-
-    return {
-      campaign_id: campaignId,
-      account_id: c.id,
+  const { data: entree, error } = await db
+    .from('bibliotheque')
+    .insert({
       video_url: body.video_url,
-      caption: assembler(texte?.caption ?? '', cta, lien, config.contenu?.position ?? 'fin'),
-      hashtags: texte?.hashtags?.length ? texte.hashtags : null,
-      title: c.platform === 'youtube' ? (texte?.title ?? null) : null,
-      youtube_type: c.platform === 'youtube' ? 'short' : null,
-      language: langueDe(c),
-      scheduled_at: new Date(depart.getTime() + i * ecart * 60_000).toISOString(),
-      status: validation ? 'a_valider' : 'pending',
-    }
-  })
+      fichier: body.fichier,
+      taille: body.taille ?? null,
+      marque,
+      sujet,
+      langue: langue || null,
+      profil: body.profil ?? null,
+      rang: Number(rang ?? 1000),
+      statut: 'en_file',
+    })
+    .select('id')
+    .single()
 
-  const { data: crees, error } = await db.from('posts').insert(lignes).select('id')
   if (error) {
-    await journal(db, body, 'rejete', `ecriture impossible : ${error.message}`, { marque, sujet, langue })
+    await journal(db, body, 'rejete', `ecriture impossible : ${error.message}`, {
+      marque,
+      sujet,
+      langue,
+    })
     return json({ ok: false, error: error.message }, 500)
   }
 
-  await journal(db, body, 'importe', ecartees.join(' ; ') || null, {
+  // Combien de videos attendent devant celle-ci, pour que le journal du
+  // watcher dise quelque chose d'utile.
+  const { count } = await db
+    .from('bibliotheque')
+    .select('id', { count: 'exact', head: true })
+    .eq('marque', marque)
+    .eq('statut', 'en_file')
+
+  await journal(db, body, 'importe', null, {
     marque,
     sujet,
     langue,
-    campaign_id: campaignId,
     video_url: body.video_url,
-    publications: crees?.length ?? 0,
+    publications: 0,
   })
-
-  if (validation) {
-    await notifyTelegram(
-      [
-        `📋 Campagne a valider : ${marque}`,
-        `Sujet : ${sujet}`,
-        `${crees?.length ?? 0} publication(s), a partir du ${depart.toLocaleString('fr-FR')}`,
-        `Fichier : ${body.fichier}`,
-        '',
-        'Relis les textes dans BubuPost, onglet Automatisation, avant qu ils partent.',
-      ].join('\n'),
-      db,
-    )
-  }
 
   return json({
     ok: true,
-    campaign_id: campaignId,
+    bibliotheque_id: entree.id,
     marque,
     sujet,
     langue,
-    publications: crees?.length ?? 0,
-    premiere: depart.toISOString(),
-    a_valider: validation,
-    avertissements: ecartees,
+    en_reserve: count ?? 0,
   })
 }
 
 async function journal(
   db: SupabaseClient,
-  body: CorpsImport,
+  body: CorpsIngestion,
   statut: 'importe' | 'rejete',
   raison: string | null,
   extra: Record<string, unknown>,
@@ -562,7 +189,7 @@ Deno.serve(async (req) => {
   })
 
   // Deux appelants possibles : le watcher avec son secret, ou Diego depuis
-  // l'application avec sa session (pour rejouer un fichier rejete).
+  // l'application avec sa session.
   const secret = req.headers.get('x-bubupost-watcher') ?? ''
   const bearer = (req.headers.get('Authorization') ?? '').replace('Bearer ', '').trim()
 
@@ -601,8 +228,6 @@ Deno.serve(async (req) => {
           ok: true,
           actif: config.actif !== false,
           intervalleSecondes: 60,
-          // Le watcher n'a pas besoin de tout : seulement ou regarder, quoi
-          // accepter comme nom, et a quelle marque rattacher.
           dossiers: dossiers.filter((d) => d.actif),
           extensions: ['.mp4', '.mov', '.m4v'],
         })
@@ -639,8 +264,8 @@ Deno.serve(async (req) => {
         return json({ ok: true, lecture: lireNom(String(body.fichier ?? ''), config.nommage) })
       }
 
-      case 'import':
-        return await importer(db, body as unknown as CorpsImport)
+      case 'ingest':
+        return await ingerer(db, body as unknown as CorpsIngestion)
 
       default:
         return json({ error: `Action inconnue : ${action}` }, 400)

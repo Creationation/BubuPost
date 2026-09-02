@@ -11,6 +11,7 @@ import type { Tables } from './database.types'
 
 export type Dossier = Tables<'watch_folders'>
 export type Import = Tables<'imports'>
+export type Video = Tables<'bibliotheque'>
 
 export type Profil = {
   nom: string
@@ -47,6 +48,8 @@ export type ConfigAuto = {
   profils: Profil[]
   cadence: Cadence
   quotas: { surDepassement: 'reporter' | 'ignorer' }
+  moteur: { actif: boolean; horizonJours: number }
+  reserve: { seuilParDefaut: number; seuilParMarque: Record<string, number> }
   validation: { parDefaut: boolean; parMarque: Record<string, boolean> }
   contenu: Contenu
   alerteSilenceHeures: number
@@ -88,6 +91,8 @@ export function configVide(): ConfigAuto {
       afflux: 'etaler',
     },
     quotas: { surDepassement: 'reporter' },
+    moteur: { actif: false, horizonJours: 3 },
+    reserve: { seuilParDefaut: 3, seuilParMarque: {} },
     validation: { parDefaut: true, parMarque: {} },
     contenu: { cta: {}, liens: {}, position: 'fin' },
     alerteSilenceHeures: 26,
@@ -130,6 +135,14 @@ export function normaliserConfig(brut: unknown): ConfigAuto {
       afflux: c.cadence?.afflux === 'auPlusTot' ? 'auPlusTot' : 'etaler',
     },
     quotas: { surDepassement: c.quotas?.surDepassement === 'ignorer' ? 'ignorer' : 'reporter' },
+    moteur: {
+      actif: c.moteur?.actif === true,
+      horizonJours: Number(c.moteur?.horizonJours ?? v.moteur.horizonJours),
+    },
+    reserve: {
+      seuilParDefaut: Number(c.reserve?.seuilParDefaut ?? v.reserve.seuilParDefaut),
+      seuilParMarque: c.reserve?.seuilParMarque ?? {},
+    },
     validation: {
       parDefaut: c.validation?.parDefaut !== false,
       parMarque: c.validation?.parMarque ?? {},

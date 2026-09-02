@@ -9,6 +9,7 @@ import Admin from './pages/Admin'
 import Guide from './pages/Guide'
 import Consignes from './pages/Consignes'
 import Automatisation from './pages/Automatisation'
+import Bibliotheque from './pages/Bibliotheque'
 import TikTokCallback from './pages/TikTokCallback'
 import MetaCallback from './pages/MetaCallback'
 import YoutubeCallback from './pages/YoutubeCallback'
@@ -35,6 +36,7 @@ function Private() {
         <Route path="posts" element={<Posts />} />
         <Route path="accounts" element={<Accounts />} />
         <Route path="consignes" element={<Consignes />} />
+        <Route path="bibliotheque" element={<Bibliotheque />} />
         <Route path="automatisation" element={<Automatisation />} />
         <Route path="guide" element={<Guide />} />
         <Route path="admin" element={<Admin />} />

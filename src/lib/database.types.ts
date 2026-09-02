@@ -98,6 +98,60 @@ export type Database = {
         }
         Relationships: []
       }
+      bibliotheque: {
+        Row: {
+          campaign_id: string | null
+          created_at: string
+          fichier: string
+          id: string
+          langue: string | null
+          marque: string
+          prioritaire: boolean
+          profil: string | null
+          programmee_pour: string | null
+          rang: number
+          statut: string
+          sujet: string
+          taille: number | null
+          updated_at: string
+          video_url: string
+        }
+        Insert: {
+          campaign_id?: string | null
+          created_at?: string
+          fichier: string
+          id?: string
+          langue?: string | null
+          marque: string
+          prioritaire?: boolean
+          profil?: string | null
+          programmee_pour?: string | null
+          rang?: number
+          statut?: string
+          sujet: string
+          taille?: number | null
+          updated_at?: string
+          video_url: string
+        }
+        Update: {
+          campaign_id?: string | null
+          created_at?: string
+          fichier?: string
+          id?: string
+          langue?: string | null
+          marque?: string
+          prioritaire?: boolean
+          profil?: string | null
+          programmee_pour?: string | null
+          rang?: number
+          statut?: string
+          sujet?: string
+          taille?: number | null
+          updated_at?: string
+          video_url?: string
+        }
+        Relationships: []
+      }
       consignes: {
         Row: {
           cle: string
@@ -425,6 +479,9 @@ export type Database = {
       }
       is_admin: { Args: never; Returns: boolean }
       quota_du_jour: { Args: { p_platform: string }; Returns: number }
+      rang_suivant: { Args: { p_marque: string }; Returns: number }
+      renumeroter_bibliotheque: { Args: { p_marque: string }; Returns: number }
+      run_cadence: { Args: never; Returns: undefined }
       run_refresh_tokens: { Args: never; Returns: undefined }
       run_scheduler: { Args: never; Returns: undefined }
     }

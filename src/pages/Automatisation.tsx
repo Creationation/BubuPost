@@ -357,6 +357,13 @@ function Suivi({
 
       <section className="panel p-5">
         <h2 className="mb-1 font-semibold">Fichiers vus</h2>
+        <p className="mb-2 text-sm text-mist-500">
+          Un fichier accepte va dans la{' '}
+          <Link to="/bibliotheque" className="text-brand-400 hover:underline">
+            bibliotheque
+          </Link>
+          , pas directement en campagne : c est la que tu decides de l ordre.
+        </p>
         <p className="mb-4 text-sm text-mist-500">
           {rejetes.length > 0
             ? `${rejetes.length} fichier(s) refuse(s). Ils sont restes en place : corrige le nom ou les reglages, puis rejoue-les.`
@@ -1018,6 +1025,8 @@ function CadenceOnglet({
 }) {
   const [etat, setEtat] = useState(config.cadence)
   const [quotas, setQuotas] = useState(config.quotas)
+  const [moteur, setMoteur] = useState(config.moteur)
+  const [reserve, setReserve] = useState(config.reserve)
   const [marque, setMarque] = useState('')
 
   const grille = marque ? (etat.parMarque[marque] ?? etat.defaut) : etat.defaut
@@ -1165,6 +1174,126 @@ function CadenceOnglet({
       </section>
 
       <section className="panel p-5">
+        <h2 className="mb-1 font-semibold">Le moteur de cadence</h2>
+        <p className="mb-4 text-sm text-mist-500">
+          Il pioche dans la{' '}
+          <Link to="/bibliotheque" className="text-brand-400 hover:underline">
+            bibliotheque
+          </Link>{' '}
+          toutes les quinze minutes et cree les campagnes. Le watcher, lui, ne fait que deposer :
+          c est toi qui decides de l ordre.
+        </p>
+
+        <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-xl border border-ink-700 p-3">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={moteur.actif}
+            onChange={(e) => setMoteur({ ...moteur, actif: e.target.checked })}
+          />
+          <span>
+            <span className="block text-sm text-mist-100">Laisser le moteur tourner</span>
+            <span className="block text-xs text-mist-600">
+              Eteint, les videos s accumulent dans la bibliotheque sans etre programmees. Tu peux
+              toujours lancer un passage a la main depuis la bibliotheque.
+            </span>
+          </span>
+        </label>
+
+        <label className="block max-w-xs">
+          <span className="label">Remplir a l avance</span>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              max={30}
+              className="field tabular-nums"
+              value={moteur.horizonJours}
+              onChange={(e) =>
+                setMoteur({ ...moteur, horizonJours: Math.max(1, Number(e.target.value) || 3) })
+              }
+            />
+            <span className="shrink-0 text-xs text-mist-600">jours</span>
+          </div>
+          <span className="mt-1 block text-xs text-mist-600">
+            Jusqu ou le moteur programme. Trois jours laissent le temps de voir venir sans figer un
+            mois entier : une campagne creee peut encore etre corrigee, mais pas reordonnee.
+          </span>
+        </label>
+      </section>
+
+      <section className="panel p-5">
+        <h2 className="mb-1 font-semibold">Alerte de reserve</h2>
+        <p className="mb-4 text-sm text-mist-500">
+          Un message Telegram quand la bibliotheque descend sous le seuil, pour produire avant
+          d etre a sec. Une marque sans video voit ses creneaux sautes, et l alerte le dit.
+        </p>
+
+        <label className="mb-4 block max-w-xs">
+          <span className="label">Seuil par defaut</span>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={50}
+              className="field tabular-nums"
+              value={reserve.seuilParDefaut}
+              onChange={(e) =>
+                setReserve({ ...reserve, seuilParDefaut: Math.max(0, Number(e.target.value) || 0) })
+              }
+            />
+            <span className="shrink-0 text-xs text-mist-600">videos</span>
+          </div>
+        </label>
+
+        <div className="space-y-2">
+          {marques.map((m) => {
+            const propre = m in (reserve.seuilParMarque ?? {})
+            return (
+              <div
+                key={m}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink-700 px-3 py-2.5"
+              >
+                <span className="text-sm font-medium">{m}</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    className="field !w-20 tabular-nums"
+                    value={propre ? reserve.seuilParMarque[m] : reserve.seuilParDefaut}
+                    onChange={(e) =>
+                      setReserve({
+                        ...reserve,
+                        seuilParMarque: {
+                          ...reserve.seuilParMarque,
+                          [m]: Math.max(0, Number(e.target.value) || 0),
+                        },
+                      })
+                    }
+                  />
+                  {propre ? (
+                    <button
+                      className="text-xs text-mist-600 hover:text-mist-300"
+                      onClick={() => {
+                        const suite = { ...reserve.seuilParMarque }
+                        delete suite[m]
+                        setReserve({ ...reserve, seuilParMarque: suite })
+                      }}
+                    >
+                      par defaut
+                    </button>
+                  ) : (
+                    <span className="text-xs text-mist-600">par defaut</span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="panel p-5">
         <h2 className="mb-1 font-semibold">Si une plateforme est au quota</h2>
         <p className="mb-3 text-sm text-mist-500">
           Six envois YouTube par jour toutes chaines confondues, vingt-cinq publications Instagram
@@ -1214,7 +1343,7 @@ function CadenceOnglet({
           <button
             className="btn btn-primary"
             disabled={busy}
-            onClick={() => void onEnregistrer({ ...config, cadence: etat, quotas })}
+            onClick={() => void onEnregistrer({ ...config, cadence: etat, quotas, moteur, reserve })}
           >
             {busy ? 'Enregistrement...' : 'Enregistrer'}
           </button>

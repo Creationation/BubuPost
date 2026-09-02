@@ -5,10 +5,13 @@
  * Extension .cjs et non .js : le package.json du projet declare
  * "type": "module", et Node refuserait alors require() dans un .js.
  *
- * Ce script est volontairement bete. Il ne decide de rien : a chaque passage
- * il demande a l'application ce qu'il doit surveiller, il depose ce qu'il
- * trouve, et c'est l'application qui lit le nom du fichier, choisit les
- * comptes, ecrit les textes et place les horaires.
+ * Ce script est volontairement bete. Il ne decide de rien, et il ne programme
+ * RIEN : a chaque passage il demande a l'application ce qu'il doit surveiller,
+ * puis il depose ce qu'il trouve dans la bibliotheque.
+ *
+ * Ce qui part en premier n'est pas son affaire. L'ordre de publication est un
+ * choix editorial : Diego ordonne la file dans l'app, et le moteur de cadence
+ * la vide. Un ramassage alphabetique n'a pas a decider de ca.
  *
  * Consequence directe : changer un reglage dans BubuPost change le
  * comportement au passage suivant. Ce fichier n'a pas a etre rouvert.
@@ -265,7 +268,7 @@ async function passage(local) {
         const videoUrl = await deposer(local, complet, fichier)
 
         const resultat = await appeler(local, {
-          action: 'import',
+          action: 'ingest',
           fichier,
           dossier: dossier.chemin,
           taille,
@@ -283,13 +286,12 @@ async function passage(local) {
           continue
         }
 
-        const suite = resultat.a_valider ? 'en attente de validation' : 'en file d attente'
         bien(
-          `${fichier} : ${resultat.publications} publication(s) pour ${resultat.marque}, ${suite}.`,
+          `${fichier} : ajoute a la bibliotheque de ${resultat.marque}, sujet « ${resultat.sujet} ».`,
         )
-        if (resultat.avertissements?.length) {
-          for (const a of resultat.avertissements) info(`   ${a}`)
-        }
+        info(
+          `   ${resultat.en_reserve} video(s) en reserve pour cette marque. Le moteur de cadence les programmera.`,
+        )
 
         const range = ranger(dossier.chemin, fichier, local.sousDossierTraite)
         info(`   range dans ${range}`)
