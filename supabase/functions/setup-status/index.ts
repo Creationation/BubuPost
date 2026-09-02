@@ -21,7 +21,8 @@ Deno.serve(async (req) => {
   return json({
     anthropic: has('ANTHROPIC_API_KEY'),
     telegram: has('TELEGRAM_BOT_TOKEN') && has('TELEGRAM_CHAT_ID'),
-    google: has('GOOGLE_CLIENT_ID') && has('GOOGLE_CLIENT_SECRET'),
+    // Ancien nommage GOOGLE_*, abandonne : tout est sur YOUTUBE_* desormais.
+    google: has('YOUTUBE_CLIENT_ID') && has('YOUTUBE_CLIENT_SECRET'),
     tiktok: has('TIKTOK_CLIENT_KEY') && has('TIKTOK_CLIENT_SECRET'),
 
     // La client_key TikTok est publique par construction : elle apparait en

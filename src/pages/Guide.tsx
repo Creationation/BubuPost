@@ -358,8 +358,8 @@ export default function Guide() {
           title="YouTube"
           badge={
             <Badge
-              ok={connected('youtube') && Boolean(status?.google)}
-              label={connected('youtube') && status?.google ? 'Connecte' : 'A faire'}
+              ok={connected('youtube') && Boolean(status?.youtube)}
+              label={connected('youtube') && status?.youtube ? 'Connecte' : 'A faire'}
             />
           }
           open={open === 'youtube'}
