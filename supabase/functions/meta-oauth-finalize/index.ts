@@ -112,6 +112,23 @@ function messageFinal(nom: string, misAJour: boolean, facebook: string | null): 
   return `Le compte ${nom} ${verbe} et il est actif.`
 }
 
+/** Message pour une selection de plusieurs comptes d'un coup. */
+function messageGroupe(
+  resultats: Array<{ nom: string; misAJour: boolean; facebook: string | null }>,
+): string {
+  if (resultats.length === 1) {
+    const r = resultats[0]
+    return messageFinal(r.nom, r.misAJour, r.facebook)
+  }
+
+  const noms = resultats.map((r) => r.nom).join(', ')
+  const pages = resultats.filter((r) => r.facebook).length
+
+  return pages > 0
+    ? `${resultats.length} comptes connectes : ${noms}. Leurs ${pages} Pages Facebook sont ajoutees pour les Reels.`
+    : `${resultats.length} comptes connectes : ${noms}.`
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -128,6 +145,8 @@ Deno.serve(async (req) => {
     data_access_expiration_time?: number
     /** Choix de l'utilisateur quand plusieurs Pages sont disponibles. */
     ig_user_id?: string
+    /** Selection multiple. L'ancien champ singulier reste accepte. */
+    ig_user_ids?: string[]
   }
   try {
     body = await req.json()
@@ -182,17 +201,40 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     })
 
-    // Choix deja fait par l'utilisateur.
-    if (body.ig_user_id) {
-      const page = pages.find((p) => p.ig_user_id === body.ig_user_id)
-      if (!page) {
-        return json({ ok: false, error: "Ce compte Instagram n'est plus accessible" }, 400)
+    // Choix deja fait par l'utilisateur, un compte ou plusieurs.
+    const choisis = body.ig_user_ids?.length
+      ? body.ig_user_ids
+      : body.ig_user_id
+        ? [body.ig_user_id]
+        : []
+
+    if (choisis.length > 0) {
+      const retenues = pages.filter((p) => choisis.includes(p.ig_user_id))
+      if (retenues.length === 0) {
+        return json(
+          { ok: false, error: "Aucun des comptes choisis n'est plus accessible" },
+          400,
+        )
       }
-      const { nom, misAJour, facebook } = await enregistrer(db, page, brand, userToken, expiry)
+
+      // En serie, pas en parallele : chaque enregistrement lit puis ecrit dans
+      // accounts, et deux ecritures simultanees sur la meme Page creeraient un
+      // doublon au lieu d'une mise a jour.
+      const resultats = []
+      for (const page of retenues) {
+        resultats.push(await enregistrer(db, page, brand, userToken, expiry))
+      }
+
+      const manquants = choisis.length - retenues.length
+
       return json({
         ok: true,
-        account_name: nom,
-        message: messageFinal(nom, misAJour, facebook),
+        account_name: resultats[0].nom,
+        comptes_connectes: resultats.length,
+        message:
+          manquants > 0
+            ? `${messageGroupe(resultats)} ${manquants} compte(s) n'etaient plus accessibles.`
+            : messageGroupe(resultats),
       })
     }
 

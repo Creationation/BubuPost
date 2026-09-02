@@ -139,6 +139,7 @@ export type FinalisationMeta = {
   account_name?: string
   choix_requis?: boolean
   comptes?: CompteMeta[]
+  comptes_connectes?: number
 }
 
 export async function finaliserMeta(input: {
@@ -147,6 +148,8 @@ export async function finaliserMeta(input: {
   expires_in?: number | null
   data_access_expiration_time?: number | null
   ig_user_id?: string
+  /** Selection multiple sur l ecran de choix. */
+  ig_user_ids?: string[]
 }): Promise<FinalisationMeta> {
   const { data, error } = await supabase.functions.invoke<FinalisationMeta & { error?: string }>(
     'meta-oauth-finalize',

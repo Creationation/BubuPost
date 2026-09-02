@@ -19,6 +19,10 @@ export default function MetaCallback() {
   const navigate = useNavigate()
   const [etat, setEtat] = useState<Etat>({ phase: 'travail' })
 
+  // Comptes coches sur l'ecran de choix. Tout est coche d'entree : quand on
+  // arrive avec trois comptes, on veut presque toujours les trois.
+  const [choisis, setChoisis] = useState<Set<string>>(new Set())
+
   // Le jeton ne quitte pas ce composant : il sert a finaliser, et disparait
   // avec la page. Il n'est jamais range dans un stockage du navigateur.
   const jeton = useRef<{ token: string; brand: string; expiresIn: number | null; dae: number | null } | null>(null)
@@ -88,6 +92,7 @@ export default function MetaCallback() {
     })
       .then((res) => {
         if (res.choix_requis && res.comptes?.length) {
+          setChoisis(new Set(res.comptes.map((c) => c.ig_user_id)))
           setEtat({ phase: 'choix', comptes: res.comptes })
           return
         }
@@ -103,9 +108,18 @@ export default function MetaCallback() {
       })
   }, [navigate])
 
-  async function choisir(compte: CompteMeta) {
+  function basculer(id: string) {
+    setChoisis((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function connecterSelection() {
     const en_cours = jeton.current
-    if (!en_cours) return
+    if (!en_cours || choisis.size === 0) return
     setEtat({ phase: 'travail' })
     try {
       const res = await finaliserMeta({
@@ -113,13 +127,13 @@ export default function MetaCallback() {
         brand: en_cours.brand,
         expires_in: en_cours.expiresIn,
         data_access_expiration_time: en_cours.dae,
-        ig_user_id: compte.ig_user_id,
+        ig_user_ids: [...choisis],
       })
       clearMetaFlow()
       setEtat({ phase: 'succes', message: res.message })
       setTimeout(() => {
         navigate('/accounts', { replace: true, state: { notice: res.message } })
-      }, 1600)
+      }, 2200)
     } catch (err) {
       setEtat({ phase: 'erreur', message: friendlyError(err) })
     }
@@ -152,30 +166,75 @@ export default function MetaCallback() {
 
           {etat.phase === 'choix' && (
             <div>
-              <p className="mb-1 font-medium">Quel compte connecter ?</p>
+              <p className="mb-1 font-medium">Quels comptes connecter ?</p>
               <p className="mb-4 text-sm text-mist-500">
-                Plusieurs comptes Instagram sont accessibles. Tu pourras en ajouter d'autres plus
-                tard en relancant la connexion.
+                Coche ceux que tu veux ajouter. Chacun cree son compte Instagram et sa Page
+                Facebook pour les Reels.
               </p>
+
+              <button
+                type="button"
+                className="mb-3 text-xs text-brand-400 hover:underline"
+                onClick={() =>
+                  setChoisis(
+                    choisis.size === etat.comptes.length
+                      ? new Set()
+                      : new Set(etat.comptes.map((c) => c.ig_user_id)),
+                  )
+                }
+              >
+                {choisis.size === etat.comptes.length
+                  ? 'Tout deselectionner'
+                  : 'Tout selectionner'}
+              </button>
+
               <div className="space-y-2">
-                {etat.comptes.map((c) => (
-                  <button
-                    key={c.ig_user_id}
-                    className="flex w-full items-center justify-between gap-3 rounded-xl border border-ink-700 px-4 py-3 text-left transition-colors hover:border-brand-500/50 hover:bg-ink-800"
-                    onClick={() => void choisir(c)}
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">
-                        {c.ig_username ? `@${c.ig_username}` : c.page_name}
+                {etat.comptes.map((c) => {
+                  const coche = choisis.has(c.ig_user_id)
+                  return (
+                    <button
+                      key={c.ig_user_id}
+                      type="button"
+                      onClick={() => basculer(c.ig_user_id)}
+                      aria-pressed={coche}
+                      className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
+                        coche
+                          ? 'border-brand-500/50 bg-brand-500/10'
+                          : 'border-ink-700 hover:border-ink-600 hover:bg-ink-800'
+                      }`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[11px] ${
+                          coche
+                            ? 'border-brand-400 bg-brand-500 text-white'
+                            : 'border-ink-600 bg-ink-850'
+                        }`}
+                      >
+                        {coche ? '✓' : ''}
                       </span>
-                      <span className="block truncate text-xs text-mist-500">
-                        Page {c.page_name}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">
+                          {c.ig_username ? `@${c.ig_username}` : c.page_name}
+                        </span>
+                        <span className="block truncate text-xs text-mist-500">
+                          Page {c.page_name}
+                        </span>
                       </span>
-                    </span>
-                    <span className="text-mist-600">→</span>
-                  </button>
-                ))}
+                    </button>
+                  )
+                })}
               </div>
+
+              <button
+                className="btn btn-primary mt-4 w-full"
+                onClick={() => void connecterSelection()}
+                disabled={choisis.size === 0}
+              >
+                {choisis.size === 0
+                  ? 'Choisis au moins un compte'
+                  : `Connecter ${choisis.size} compte${choisis.size > 1 ? 's' : ''}`}
+              </button>
             </div>
           )}
 
