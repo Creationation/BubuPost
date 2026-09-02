@@ -7,8 +7,42 @@ import { useLiveStatuses } from '../lib/useLiveStatuses'
 import { Alert, ConfirmModal, EmptyState, Loading, PageHeader } from '../components/ui'
 import PostComposer from '../components/PostComposer'
 import { PostEditor, PostLogs, PostRow } from '../components/PostRow'
+import { LigneCampagne, useCampagnesOuvertes } from '../components/Campagne'
 
 const STATUS_FILTERS = ['pending', 'processing', 'published', 'failed', 'cancelled'] as const
+
+type Entree = { cle: string; campagne: boolean; posts: PostWithAccount[] }
+
+/**
+ * Regroupe les publications d'une meme campagne, en conservant l'ordre.
+ *
+ * Une campagne d'un seul compte s'affiche comme une publication simple : la
+ * replier n'apporterait rien et ajouterait un clic. Les anciennes publications,
+ * sans campaign_id, passent aussi par ce chemin.
+ */
+function regrouper(posts: PostWithAccount[]): Entree[] {
+  const entrees: Entree[] = []
+  const index = new Map<string, Entree>()
+
+  for (const post of posts) {
+    const id = post.campaign_id
+    if (!id) {
+      entrees.push({ cle: post.id, campagne: false, posts: [post] })
+      continue
+    }
+    const existante = index.get(id)
+    if (existante) {
+      existante.posts.push(post)
+      continue
+    }
+    const entree: Entree = { cle: id, campagne: true, posts: [post] }
+    index.set(id, entree)
+    entrees.push(entree)
+  }
+
+  // Une campagne restee a un seul compte redevient une ligne simple.
+  return entrees.map((e) => (e.posts.length > 1 ? e : { ...e, campagne: false }))
+}
 
 export default function Posts() {
   const [posts, setPosts] = useState<PostWithAccount[]>([])
@@ -21,6 +55,8 @@ export default function Posts() {
   const [editing, setEditing] = useState<PostWithAccount | null>(null)
   const [showingLogs, setShowingLogs] = useState<PostWithAccount | null>(null)
   const [toDelete, setToDelete] = useState<PostWithAccount | null>(null)
+
+  const { ouvertes, basculer } = useCampagnesOuvertes()
 
   const [brand, setBrand] = useState('')
   const [platform, setPlatform] = useState('')
@@ -94,6 +130,17 @@ export default function Posts() {
     }
     return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]))
   }, [filtered])
+
+  /** Les memes actions, qu'une publication soit seule ou dans une campagne. */
+  function actions(post: PostWithAccount) {
+    return {
+      onEdit: () => setEditing(post),
+      onLogs: () => setShowingLogs(post),
+      onCancel: () => void act(() => cancelPost(post.id), 'Publication annulee'),
+      onRetry: () => void act(() => retryPost(post.id), 'Publication reprogrammee'),
+      onDelete: () => setToDelete(post),
+    }
+  }
 
   const hasFilter = brand || platform || accountId || status
 
@@ -207,17 +254,22 @@ export default function Posts() {
                 </span>
               </h2>
               <div className="space-y-3">
-                {list.map((post) => (
-                  <PostRow
-                    key={post.id}
-                    post={post}
-                    onEdit={() => setEditing(post)}
-                    onLogs={() => setShowingLogs(post)}
-                    onCancel={() => void act(() => cancelPost(post.id), 'Publication annulee')}
-                    onRetry={() => void act(() => retryPost(post.id), 'Publication reprogrammee')}
-                    onDelete={() => setToDelete(post)}
-                  />
-                ))}
+                {regrouper(list).map((entree) =>
+                  entree.campagne ? (
+                    <LigneCampagne
+                      key={entree.cle}
+                      posts={entree.posts}
+                      ouvert={ouvertes.has(entree.cle)}
+                      onToggle={() => basculer(entree.cle)}
+                    >
+                      {entree.posts.map((post) => (
+                        <PostRow key={post.id} post={post} {...actions(post)} />
+                      ))}
+                    </LigneCampagne>
+                  ) : (
+                    <PostRow key={entree.posts[0].id} post={entree.posts[0]} {...actions(entree.posts[0])} />
+                  ),
+                )}
               </div>
             </section>
           ))}

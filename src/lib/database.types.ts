@@ -81,11 +81,11 @@ export type Database = {
         Row: {
           account_id: string
           attempts: number
+          campaign_id: string | null
           caption: string | null
           container_id: string | null
           created_at: string
           error_message: string | null
-          group_id: string | null
           hashtags: string[] | null
           id: string
           next_attempt_at: string | null
@@ -99,11 +99,11 @@ export type Database = {
         Insert: {
           account_id: string
           attempts?: number
+          campaign_id?: string | null
           caption?: string | null
           container_id?: string | null
           created_at?: string
           error_message?: string | null
-          group_id?: string | null
           hashtags?: string[] | null
           id?: string
           next_attempt_at?: string | null
@@ -117,11 +117,11 @@ export type Database = {
         Update: {
           account_id?: string
           attempts?: number
+          campaign_id?: string | null
           caption?: string | null
           container_id?: string | null
           created_at?: string
           error_message?: string | null
-          group_id?: string | null
           hashtags?: string[] | null
           id?: string
           next_attempt_at?: string | null
@@ -240,8 +240,8 @@ export type Database = {
     }
     Functions: {
       is_admin: { Args: never; Returns: boolean }
+      run_refresh_tokens: { Args: never; Returns: undefined }
       run_scheduler: { Args: never; Returns: undefined }
-      run_tiktok_refresh: { Args: never; Returns: undefined }
     }
     Enums: {
       [_ in never]: never

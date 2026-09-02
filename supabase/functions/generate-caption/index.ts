@@ -1,6 +1,9 @@
-// Generation de legende par l'API Claude, a partir du sujet du jour.
-// Une legende par plateforme : le ton et la longueur ne se ressemblent pas
-// entre un Reel Instagram, un Short YouTube et un TikTok.
+// Generation de legendes par l'API Claude, a partir du sujet du jour.
+//
+// Deux modes. Un compte : une legende. Plusieurs comptes : toutes les
+// variantes en UN SEUL appel. C'est a la fois moins cher en tokens et
+// meilleur, parce que le modele voit les autres textes pendant qu'il ecrit et
+// peut vraiment les differencier, au lieu de produire n fois la meme idee.
 import Anthropic from 'npm:@anthropic-ai/sdk@0.122.0'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders, json } from '../_shared/cors.ts'
@@ -12,29 +15,52 @@ const MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-opus-5'
 
 const PLATFORM_BRIEF: Record<string, string> = {
   instagram:
-    "Instagram Reels. Deux a quatre lignes, une accroche forte des le premier mot, un appel a l'action discret. 5 a 8 hashtags pertinents.",
+    "Instagram Reels. Ton visuel, on decrit ce qu'on voit autant que ce qu'on dit. Deux a quatre lignes, une accroche forte des le premier mot. 5 a 8 hashtags.",
   facebook:
-    'Facebook Reels. Ton un peu plus explicatif et posé qu\'Instagram, deux a quatre lignes. 3 a 5 hashtags.',
+    'Facebook Reels. Plus narratif, on raconte, on prend le temps de poser le contexte. Trois a cinq lignes, phrases completes. 0 a 3 hashtags seulement.',
   threads:
-    'Threads. Ton conversationnel, comme un message a des gens qui suivent deja. Court, une a trois lignes, 0 a 2 hashtags.',
+    'Threads. Ton conversationnel, comme un message a des gens qui suivent deja. Une a trois lignes, 0 a 2 hashtags.',
   youtube:
     'YouTube Shorts. La premiere ligne sert de titre et doit faire moins de 100 caracteres. Ensuite deux a quatre lignes de description. 3 a 5 hashtags.',
   tiktok:
-    'TikTok. Tres court, une a deux lignes, ton direct et natif de la plateforme. 3 a 5 hashtags.',
+    'TikTok. Tres court, une a deux lignes, accrocheur des le premier mot, ton natif de la plateforme. 3 a 5 hashtags courts.',
 }
 
-const SYSTEM = `Tu ecris des legendes pour des videos courtes publiees sur les reseaux sociaux.
-
-Regles absolues :
+const REGLES = `Regles absolues :
 - Ecris dans la langue demandee, jamais une autre.
 - N'utilise JAMAIS de tiret cadratin (—) ni de tiret demi-cadratin (–). Utilise une virgule, un point, deux points ou des parentheses.
 - Pas de guillemets autour de la legende, pas de preambule, pas de commentaire sur ton travail.
 - Les hashtags sont renvoyes a part, jamais dans le texte de la legende.
-- Reste concret et specifique au sujet fourni. Pas de formule creuse ni de promesse vague.
+- Reste concret et specifique au sujet fourni. Pas de formule creuse ni de promesse vague.`
+
+const SYSTEM_SIMPLE = `Tu ecris des legendes pour des videos courtes publiees sur les reseaux sociaux.
+
+${REGLES}
 
 Tu reponds uniquement par un objet JSON valide, sans bloc de code autour, de la forme :
 {"caption": "le texte de la legende", "hashtags": ["motcle", "autremotcle"]}
 Les hashtags sont donnes sans le caractere #.`
+
+const SYSTEM_LOT = `Tu ecris des legendes pour une meme video, publiee sur plusieurs comptes de reseaux sociaux.
+
+${REGLES}
+
+EXIGENCE CENTRALE : les textes doivent etre REELLEMENT DIFFERENTS les uns des autres.
+Pas des reformulations, pas des synonymes echanges, pas la meme phrase avec un mot en plus.
+Chaque texte doit prendre un ANGLE different sur le meme sujet : l'un pose une question, l'autre
+raconte une situation, l'autre donne un chiffre, l'autre s'adresse directement au lecteur, l'autre
+part d'une erreur courante. Change aussi la structure : longueur, rythme, presence ou non d'un
+appel a l'action. Deux textes qui se ressemblent seraient reperes comme du contenu duplique, ce
+qui est exactement ce qu'on veut eviter.
+
+Varie egalement les hashtags d'un texte a l'autre, tout en restant pertinent.
+
+Tu reponds uniquement par un tableau JSON valide, sans bloc de code autour, de la forme :
+[{"id": "identifiant fourni", "caption": "le texte", "hashtags": ["motcle"]}]
+Un objet par cible demandee, dans le meme ordre, avec l'identifiant exactement tel qu'il est
+fourni. Les hashtags sont donnes sans le caractere #.`
+
+type Cible = { id: string; platform: string; account_name?: string }
 
 type Body = {
   subject?: string
@@ -42,26 +68,37 @@ type Body = {
   brand?: string
   language?: string
   tone?: string
+  /** Mode lot : une variante distincte par cible. */
+  targets?: Cible[]
 }
 
-/** Recupere le premier objet JSON du texte, meme s'il est entoure de bruit. */
-function extractJson(text: string): { caption: string; hashtags: string[] } {
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start !== -1 && end > start) {
-    try {
-      const parsed = JSON.parse(text.slice(start, end + 1))
-      return {
-        caption: String(parsed.caption ?? '').trim(),
-        hashtags: Array.isArray(parsed.hashtags)
-          ? parsed.hashtags.map((h: unknown) => String(h).replace(/^#/, '').trim()).filter(Boolean)
-          : [],
+/** Extrait le premier objet ou tableau JSON du texte, meme entoure de bruit. */
+function extraireJson(texte: string): unknown {
+  for (const [ouvre, ferme] of [
+    ['[', ']'],
+    ['{', '}'],
+  ]) {
+    const debut = texte.indexOf(ouvre)
+    const fin = texte.lastIndexOf(ferme)
+    if (debut !== -1 && fin > debut) {
+      try {
+        return JSON.parse(texte.slice(debut, fin + 1))
+      } catch {
+        // On tente la forme suivante.
       }
-    } catch {
-      // On retombe sur le texte brut juste en dessous.
     }
   }
-  return { caption: text.trim(), hashtags: [] }
+  return null
+}
+
+/** Diego ne veut aucun tiret cadratin : ceinture et bretelles apres le modele. */
+function nettoyer(texte: string): string {
+  return String(texte ?? '').replace(/[—–]/g, ',').trim()
+}
+
+function normaliserHashtags(valeur: unknown): string[] {
+  if (!Array.isArray(valeur)) return []
+  return valeur.map((h) => String(h).replace(/^#/, '').trim()).filter(Boolean)
 }
 
 Deno.serve(async (req) => {
@@ -87,33 +124,52 @@ Deno.serve(async (req) => {
   const subject = (body.subject ?? '').trim()
   if (!subject) return json({ error: 'Le sujet est obligatoire' }, 400)
 
-  const platform = (body.platform ?? 'instagram').toLowerCase()
-  const brief = PLATFORM_BRIEF[platform] ?? PLATFORM_BRIEF.instagram
   const language = body.language ?? 'francais'
   const brand = body.brand ?? ''
   const tone = body.tone ?? 'direct et concret'
+  const cibles = Array.isArray(body.targets) ? body.targets.filter((t) => t?.id) : []
+  const enLot = cibles.length > 0
 
-  const prompt = [
+  if (cibles.length > 20) {
+    return json({ error: 'Trop de comptes en une fois, 20 au maximum' }, 400)
+  }
+
+  const contexte = [
     `Sujet de la video : ${subject}`,
     brand ? `Marque : ${brand}` : '',
-    `Plateforme : ${brief}`,
     `Langue : ${language}`,
-    `Ton : ${tone}`,
-  ]
-    .filter(Boolean)
-    .join('\n')
+    `Ton general : ${tone}`,
+  ].filter(Boolean)
+
+  const prompt = enLot
+    ? [
+        ...contexte,
+        '',
+        `Ecris ${cibles.length} textes differents, un par cible ci-dessous :`,
+        ...cibles.map((c, i) => {
+          const brief = PLATFORM_BRIEF[c.platform?.toLowerCase()] ?? PLATFORM_BRIEF.instagram
+          const nom = c.account_name ? ` (compte ${c.account_name})` : ''
+          return `${i + 1}. id="${c.id}"${nom} — ${brief}`
+        }),
+      ].join('\n')
+    : [
+        ...contexte,
+        `Plateforme : ${PLATFORM_BRIEF[(body.platform ?? 'instagram').toLowerCase()] ?? PLATFORM_BRIEF.instagram}`,
+      ].join('\n')
 
   const client = new Anthropic({ apiKey })
 
   try {
     const response = await client.beta.messages.create({
       model: MODEL,
-      max_tokens: 2000,
-      // Tache courte : l'effort bas suffit et garde le cout au minimum.
-      output_config: { effort: 'low' },
+      // Le mode lot ecrit plusieurs textes : il lui faut de la place.
+      max_tokens: enLot ? Math.min(8000, 800 + cibles.length * 400) : 2000,
+      // Differencier reellement des textes demande un peu plus de reflexion
+      // que d'en ecrire un seul.
+      output_config: { effort: enLot ? 'medium' : 'low' },
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
-      system: SYSTEM,
+      system: enLot ? SYSTEM_LOT : SYSTEM_SIMPLE,
       messages: [{ role: 'user', content: prompt }],
     })
 
@@ -121,23 +177,56 @@ Deno.serve(async (req) => {
       return json({ error: 'La generation a ete refusee pour ce sujet' }, 422)
     }
 
-    const text = response.content
+    const texte = response.content
       .filter((block) => block.type === 'text')
       .map((block) => (block as { text: string }).text)
       .join('\n')
 
-    const result = extractJson(text)
-    if (!result.caption) return json({ error: 'Legende vide, reessaie' }, 502)
+    const parse = extraireJson(texte)
+    const usage = {
+      input_tokens: response.usage.input_tokens,
+      output_tokens: response.usage.output_tokens,
+    }
+
+    if (enLot) {
+      const liste = Array.isArray(parse) ? parse : []
+      const parId = new Map<string, { caption: string; hashtags: string[] }>()
+
+      for (const item of liste as Array<Record<string, unknown>>) {
+        const id = String(item?.id ?? '')
+        if (!id) continue
+        parId.set(id, {
+          caption: nettoyer(item.caption as string),
+          hashtags: normaliserHashtags(item.hashtags),
+        })
+      }
+
+      // On renvoie une entree par cible demandee, meme si le modele en a
+      // oublie une : le frontend saura laquelle est vide et la proposera a
+      // regenerer, plutot que de decaler silencieusement les textes.
+      const resultats = cibles.map((c) => ({
+        id: c.id,
+        caption: parId.get(c.id)?.caption ?? '',
+        hashtags: parId.get(c.id)?.hashtags ?? [],
+      }))
+
+      const manquants = resultats.filter((r) => !r.caption).length
+      if (manquants === resultats.length) {
+        return json({ error: 'Aucune legende exploitable, reessaie' }, 502)
+      }
+
+      return json({ results: resultats, manquants, model: response.model, usage })
+    }
+
+    const objet = (parse ?? {}) as Record<string, unknown>
+    const caption = nettoyer(objet.caption as string) || nettoyer(texte)
+    if (!caption) return json({ error: 'Legende vide, reessaie' }, 502)
 
     return json({
-      ...result,
-      // Ceinture et bretelles : Diego ne veut aucun tiret cadratin.
-      caption: result.caption.replace(/[—–]/g, ','),
+      caption,
+      hashtags: normaliserHashtags(objet.hashtags),
       model: response.model,
-      usage: {
-        input_tokens: response.usage.input_tokens,
-        output_tokens: response.usage.output_tokens,
-      },
+      usage,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

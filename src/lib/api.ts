@@ -65,13 +65,18 @@ export type TargetInput = {
   hashtags: string[]
 }
 
+/**
+ * Cree une campagne : une video, une ligne par compte cible, chacune avec sa
+ * propre legende et son propre horaire.
+ * Renvoie l identifiant de campagne, qui sert a les regrouper a l affichage.
+ */
 export async function createPostGroup(
   videoUrl: string,
   targets: TargetInput[],
-): Promise<number> {
-  const groupId = crypto.randomUUID()
+): Promise<{ count: number; campaignId: string }> {
+  const campaignId = crypto.randomUUID()
   const rows = targets.map((t) => ({
-    group_id: groupId,
+    campaign_id: campaignId,
     account_id: t.account_id,
     video_url: videoUrl,
     caption: t.caption || null,
@@ -80,7 +85,7 @@ export async function createPostGroup(
     status: 'pending',
   }))
   const inserted = unwrap(await supabase.from('posts').insert(rows).select('id'))
-  return inserted.length
+  return { count: inserted.length, campaignId }
 }
 
 /**
@@ -180,6 +185,48 @@ export async function uploadVideo(
 // ---------------------------------------------------------------------------
 
 export type CaptionResult = { caption: string; hashtags: string[] }
+
+export type CaptionCible = { id: string; platform: string; account_name?: string }
+export type CaptionVariante = { id: string; caption: string; hashtags: string[] }
+
+/**
+ * Toutes les variantes en un seul appel.
+ *
+ * Moins cher qu'un appel par compte, et surtout meilleur : le modele voit les
+ * autres textes pendant qu'il ecrit, donc il peut vraiment les differencier au
+ * lieu de produire n fois la meme idee reformulee.
+ */
+export async function generateCaptionBatch(input: {
+  subject: string
+  targets: CaptionCible[]
+  brand?: string
+  language?: string
+  tone?: string
+}): Promise<{ results: CaptionVariante[]; manquants: number }> {
+  const { data, error } = await supabase.functions.invoke<{
+    results?: CaptionVariante[]
+    manquants?: number
+    error?: string
+  }>('generate-caption', { body: input })
+
+  if (error) {
+    // Une Edge Function qui repond 4xx remonte comme une erreur : le message
+    // utile est dans le corps, pas dans error.message.
+    const contexte = (error as { context?: Response }).context
+    if (contexte && typeof contexte.json === 'function') {
+      try {
+        const corps = await contexte.json()
+        if (corps?.error) throw new Error(corps.error)
+      } catch (err) {
+        if (err instanceof Error && err.message && !err.message.includes('non-2xx')) throw err
+      }
+    }
+    throw new Error(errorMessage(error))
+  }
+
+  if (!data || data.error) throw new Error(data?.error ?? 'Reponse vide')
+  return { results: data.results ?? [], manquants: data.manquants ?? 0 }
+}
 
 export async function generateCaption(input: {
   subject: string

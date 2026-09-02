@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { createPostGroup, generateCaption, uploadVideo, type TargetInput } from '../lib/api'
+import {
+  createPostGroup,
+  generateCaption,
+  generateCaptionBatch,
+  uploadVideo,
+  type TargetInput,
+} from '../lib/api'
 import { friendlyError } from '../lib/errors'
 import { PLATFORM_ICON, PLATFORM_LABEL, type Account } from '../lib/types'
 import { fromLocalInput, toLocalInput } from '../lib/format'
@@ -47,6 +53,9 @@ export default function PostComposer({
   const [error, setError] = useState<string | null>(null)
   const [generatingAll, setGeneratingAll] = useState(false)
 
+  // Publier neuf comptes a la meme seconde se voit : on propose d'espacer.
+  const [ecart, setEcart] = useState(15)
+
   useEffect(() => {
     if (!open) return
     setVideoUrl('')
@@ -54,6 +63,7 @@ export default function PostComposer({
     setTargets({})
     setError(null)
     setBusy(false)
+    setEcart(15)
   }, [open])
 
   const usable = useMemo(() => accounts.filter((a) => a.status === 'active'), [accounts])
@@ -134,19 +144,71 @@ export default function PostComposer({
     }
   }
 
+  /**
+   * Toutes les legendes en un seul appel.
+   *
+   * Un appel par compte couterait presque deux fois plus cher, et surtout
+   * chaque texte serait ecrit sans connaissance des autres : on obtiendrait
+   * neuf variantes de la meme phrase, exactement ce qu'on cherche a eviter.
+   */
   async function generateAll() {
     if (!subject.trim()) {
       setError('Renseigne le sujet du jour avant de generer les legendes')
       return
     }
+    if (selected.length === 0) return
+
     setGeneratingAll(true)
-    // En serie plutot qu'en parallele : cinq appels simultanes a l'API n'apportent
-    // rien ici et rendent les erreurs illisibles.
-    for (const id of selected) {
-      await generateFor(id)
+    setError(null)
+    try {
+      const { results, manquants } = await generateCaptionBatch({
+        subject: subject.trim(),
+        brand: accountById[selected[0]]?.brand,
+        targets: selected.map((id) => ({
+          id,
+          platform: accountById[id]?.platform ?? 'instagram',
+          account_name: accountById[id]?.account_name,
+        })),
+      })
+
+      setTargets((prev) => {
+        const next = { ...prev }
+        for (const r of results) {
+          if (!next[r.id] || !r.caption) continue
+          next[r.id] = { ...next[r.id], caption: r.caption, hashtags: r.hashtags.join(' ') }
+        }
+        return next
+      })
+
+      if (manquants > 0) {
+        setError(
+          `${manquants} legende${manquants > 1 ? 's' : ''} n'a pas ete generee. Utilise le bouton de la ligne concernee.`,
+        )
+      }
+    } catch (err) {
+      setError(friendlyError(err))
+    } finally {
+      setGeneratingAll(false)
     }
-    setGeneratingAll(false)
   }
+
+  /** Espace les horaires de la premiere cible vers les suivantes. */
+  function etalerHoraires() {
+    const premiere = Object.values(targets)[0]
+    if (!premiere) return
+    const depart = new Date(premiere.scheduledLocal).getTime()
+    if (Number.isNaN(depart)) return
+
+    setTargets((prev) => {
+      const next = { ...prev }
+      selected.forEach((id, i) => {
+        const quand = new Date(depart + i * ecart * 60_000)
+        next[id] = { ...next[id], scheduledLocal: toLocalInput(quand.toISOString()) }
+      })
+      return next
+    })
+  }
+
 
   async function onUpload(file: File) {
     setUploading(true)
@@ -179,7 +241,7 @@ export default function PostComposer({
         caption: targets[id].caption.trim(),
         hashtags: parseHashtags(targets[id].hashtags),
       }))
-      const count = await createPostGroup(videoUrl.trim(), list)
+      const { count } = await createPostGroup(videoUrl.trim(), list)
       onCreated(count)
     } catch (err) {
       setError(friendlyError(err))
@@ -281,6 +343,26 @@ export default function PostComposer({
                 <button type="button" className="btn btn-ghost !py-1 !text-xs" onClick={syncTimes}>
                   Meme heure partout
                 </button>
+                <span className="flex items-center gap-1.5 rounded-lg border border-ink-700 px-2 py-1 text-xs text-mist-500">
+                  Espacer de
+                  <input
+                    type="number"
+                    min={0}
+                    max={240}
+                    value={ecart}
+                    onChange={(e) => setEcart(Math.max(0, Number(e.target.value) || 0))}
+                    className="w-12 bg-transparent text-center text-mist-100 outline-none"
+                    aria-label="Minutes entre chaque publication"
+                  />
+                  min
+                  <button
+                    type="button"
+                    className="ml-1 rounded px-1.5 py-0.5 text-brand-400 hover:bg-ink-800"
+                    onClick={etalerHoraires}
+                  >
+                    appliquer
+                  </button>
+                </span>
                 <button
                   type="button"
                   className="btn btn-ghost !py-1 !text-xs"
