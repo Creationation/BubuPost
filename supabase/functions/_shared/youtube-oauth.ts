@@ -10,7 +10,9 @@ const API = 'https://www.googleapis.com/youtube/v3'
 export const REDIRECT_URI =
   Deno.env.get('YOUTUBE_REDIRECT_URI') ?? 'https://bubu-post.vercel.app/auth/youtube/callback'
 
-export const SCOPES = 'https://www.googleapis.com/auth/youtube.upload'
+/** Doit rester identique a la liste demandee par le frontend. */
+export const SCOPES =
+  'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly'
 
 export class YouTubeError extends Error {
   code: string
@@ -50,6 +52,9 @@ export function explain(code: string, message: string): string {
   }
   if (m.includes('quotaexceeded') || m.includes('quota')) {
     return "Le quota d'API YouTube du jour est epuise. Il se remet a zero a minuit, heure du Pacifique."
+  }
+  if (m.includes('insufficient authentication scopes') || m.includes('insufficientpermissions')) {
+    return "L'autorisation accordee ne suffit pas pour lire les informations de la chaine. Relance la connexion depuis l'onglet Comptes : les permissions demandees ont change."
   }
   if (m.includes('unauthorized') || m.includes('401')) {
     return "Le jeton YouTube n'est plus valide. Reconnecte le compte depuis l'onglet Comptes."

@@ -3,7 +3,15 @@ import { errorMessage } from './errors'
 import { setupStatus } from './api'
 
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
-const SCOPES = 'https://www.googleapis.com/auth/youtube.upload'
+/**
+ * Deux scopes, separes par un espace.
+ *
+ * youtube.upload suffit a envoyer une video, mais pas a lire quoi que ce soit :
+ * l'appel channels qui recupere le nom de la chaine repondait
+ * « insufficient authentication scopes ». youtube.readonly comble ce manque.
+ */
+const SCOPES =
+  'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly'
 const CLE_FLOW = 'bubupost.youtube.flow'
 const DUREE_MAX_MS = 15 * 60 * 1000
 
@@ -78,7 +86,10 @@ export async function buildYoutubeAuthUrl(brand: string): Promise<string> {
     state,
   })
 
-  return `${AUTH_URL}?${params.toString()}`
+  // URLSearchParams encode l'espace en +, alors que Google attend %20 dans
+  // le parametre scope. Aucune autre valeur ici ne contient de +, le
+  // remplacement global est donc sans risque.
+  return `${AUTH_URL}?${params.toString().replace(/\+/g, '%20')}`
 }
 
 export type ChaineYoutube = { id: string; titre: string; vignette: string | null }
