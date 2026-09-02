@@ -466,9 +466,13 @@ export default function Guide() {
         <h2 className="mb-1 font-semibold">Deposer une video et laisser faire</h2>
         <p className="mb-4 text-sm text-mist-500">
           Le watcher est un petit programme qui tourne sur ton PC. Il surveille les dossiers que tu
-          designes, envoie les videos qu il y trouve, et laisse l application ecrire les textes et
-          placer les horaires. Ton PC n a besoin d etre allume qu au moment du depot : la
-          publication, elle, se fait dans le nuage, PC eteint.
+          designes et depose les videos qu il y trouve dans la{' '}
+          <Link to="/bibliotheque" className="text-brand-400 hover:underline">
+            bibliotheque
+          </Link>
+          . Il ne programme rien : c est toi qui ordonnes la file, et le moteur de cadence la vide
+          selon ton rythme. Ton PC n a besoin d etre allume qu au moment du depot, la publication
+          se fait dans le nuage.
         </p>
 
         <h3 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wider text-mist-500">
@@ -537,10 +541,40 @@ export default function Guide() {
           </Step>
         </ol>
 
+        <h3 className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wider text-mist-500">
+          Ce qui se passe apres le depot
+        </h3>
+        <ol className="space-y-3">
+          <Step n={1}>
+            La video arrive dans la{' '}
+            <Link to="/bibliotheque" className="text-brand-400 hover:underline">
+              Reserve
+            </Link>
+            , en fin de file de sa marque. Rien n est programme.
+          </Step>
+          <Step n={2}>
+            Tu ordonnes : glisse une ligne pour la remonter, marque-la prioritaire pour qu elle
+            passe devant, ou mets-la en pause pour la garder sous le coude.
+          </Step>
+          <Step n={3}>
+            Chaque video affiche le creneau ou elle partira. C est le moteur lui-meme qui repond,
+            donc ce qui est annonce est ce qui arrivera.
+          </Step>
+          <Step n={4}>
+            Toutes les quinze minutes, le moteur prend le haut de la file et cree les campagnes,
+            selon la cadence de la marque.
+          </Step>
+        </ol>
+
         <p className="mt-4 text-sm text-mist-500">
+          Si une video doit partir a une date precise, le bouton Programmer la sort de la file et
+          cree sa campagne tout de suite, a l heure choisie.
+        </p>
+        <p className="mt-2 text-sm text-mist-500">
           L onglet Automatisation te dit quand le watcher s est manifeste pour la derniere fois, ce
           qu il a traite, et ce qu il a refuse. S il se tait plus longtemps que prevu, un bandeau
-          rouge apparait.
+          rouge apparait. Tu es aussi prevenu par Telegram quand la reserve d une marque descend
+          trop bas.
         </p>
       </section>
 
