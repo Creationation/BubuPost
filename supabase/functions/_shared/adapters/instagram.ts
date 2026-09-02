@@ -86,22 +86,42 @@ export const instagram: PlatformAdapter = {
     return id
   },
 
+  /**
+   * Verification en deux temps : le compte repond, et il a le droit de publier.
+   *
+   * Ne jamais demander le champ account_type : il appartient a l'Instagram
+   * Basic Display API, pas a la Graph API des comptes professionnels. Un seul
+   * champ inexistant fait echouer TOUTE la requete en erreur #100, et le
+   * compte etait affiche comme n'ayant pas les droits alors que tout marchait.
+   * Meme piege que le champ username cote TikTok.
+   */
   async verify(account: Account): Promise<string> {
     const token = requireToken(account)
     const igUserId = requireExternalId(account)
+    const t = encodeURIComponent(token)
 
     const json = await apiFetch(
-      `${GRAPH}/${igUserId}?fields=username,account_type&access_token=${encodeURIComponent(token)}`,
+      `${GRAPH}/${igUserId}?fields=username,name&access_token=${t}`,
       { method: 'GET' },
       'Instagram verification du compte',
     )
 
     if (typeof json.username !== 'string') {
       throw new PlatformError(
-        "Instagram repond, mais cet identifiant n'est pas un compte Instagram professionnel. Verifie que tu as bien colle l'IG User ID, et pas l'ID de la Page Facebook.",
+        "Instagram repond, mais cet identifiant n'est pas un compte professionnel. Reconnecte le compte depuis le bouton Connecter un compte Instagram.",
         { detail: json },
       )
     }
+
+    // Cet endpoint n'existe que si instagram_content_publish est reellement
+    // accorde : un succes ici prouve le droit de publier, au lieu de le
+    // supposer. Il donne en prime le quota tel que Meta le compte.
+    await apiFetch(
+      `${GRAPH}/${igUserId}/content_publishing_limit?fields=config,quota_usage&access_token=${t}`,
+      { method: 'GET' },
+      'Instagram verification du droit de publier',
+    )
+
     return `@${json.username}`
   },
 }

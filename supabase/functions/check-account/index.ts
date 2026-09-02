@@ -25,6 +25,12 @@ function explain(platform: string, message: string): string {
   if (m.includes('session has expired') || m.includes('expired') || m.includes('code 190')) {
     return "Le token a expire. Il faut en generer un nouveau, puis le recoller ici. Sur Meta, un token longue duree tient 60 jours."
   }
+  // A traiter avant le cas des permissions : Meta renvoie aussi un #100 quand
+  // on demande un champ qui n'existe pas, et le message parlait alors de
+  // droits manquants alors que le token etait parfaitement valide.
+  if (m.includes('nonexisting field') || m.includes('nonexisting node')) {
+    return "L'application a demande a la plateforme un champ qu'elle ne connait pas. C'est un defaut de mon cote, pas un probleme de token. Signale-le moi."
+  }
   if (m.includes('permission') || m.includes('scope') || m.includes('#200') || m.includes('#10')) {
     return "Le token fonctionne mais il n'a pas les droits necessaires. Regenere-le en cochant bien toutes les permissions demandees pour cette plateforme."
   }
