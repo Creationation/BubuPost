@@ -512,6 +512,47 @@ export default function Guide() {
         </p>
 
         <h3 className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wider text-mist-500">
+          Un dossier deja organise, comme TradeReels
+        </h3>
+        <p className="text-sm text-mist-300">
+          Si un autre outil produit deja tes videos dans une arborescence, tu n as rien a renommer
+          ni a deplacer. Dans les reglages du dossier, choisis{' '}
+          <span className="text-mist-100">Dans l arborescence</span> : c est le chemin qui informe,
+          pas le nom du fichier.
+        </p>
+        <p className="my-3 rounded-lg border border-ink-700 bg-ink-850 px-3 py-2 font-mono text-xs text-mist-100">
+          26062026/1_matin/26062026_1_matin.mp4
+        </p>
+        <ul className="space-y-1.5 text-sm text-mist-300">
+          <li>
+            <span className="font-medium text-mist-100">26062026</span> : la journee, en JJMMAAAA.
+          </li>
+          <li>
+            <span className="font-medium text-mist-100">1_matin</span> : le moment. Le chiffre donne
+            l ordre dans la journee.
+          </li>
+          <li>
+            Le sujet vient d un <span className="font-medium text-mist-100">modele</span> que tu
+            ecris une fois, ou la date et le creneau sont remplaces.
+          </li>
+        </ul>
+        <p className="mt-3 text-sm text-mist-500">
+          Un tel dossier peut alimenter plusieurs marques d un coup : chaque video entre une fois
+          par marque, dans sa propre file. Le repere anti-doublon est le couple fichier plus
+          marque, donc relancer le watcher sur tout le dossier ne recree rien, et une marque
+          ajoutee plus tard rattrape l historique toute seule.
+        </p>
+        <p className="mt-2 text-sm text-mist-500">
+          L ordre suit la chronologie du tournage, pas l ordre alphabetique du disque : en JJMMAAAA,
+          01072026 viendrait avant 26062026 alors que le 26 juin est anterieur. Pour savoir ou tu en
+          es, l onglet{' '}
+          <Link to="/bibliotheque" className="text-brand-400 hover:underline">
+            Reserve
+          </Link>{' '}
+          a une vue "Par fichier source", avec une pastille par marque.
+        </p>
+
+        <h3 className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wider text-mist-500">
           Installer le watcher, une seule fois
         </h3>
         <ol className="space-y-3">
