@@ -26,7 +26,6 @@ import {
   configVide,
   dateLisible,
   exempleNom,
-  exemplesNom,
   JOURS_CADENCE,
   journeesVues,
   normaliserConfig,
@@ -37,7 +36,7 @@ import {
   type Journee,
 } from '../lib/automatisation'
 import { formatDateTime, relative } from '../lib/format'
-import { Alert, ConfirmModal, EmptyState, Loading, PageHeader } from '../components/ui'
+import { Aide, Alert, ConfirmModal, EmptyState, Loading, PageHeader } from '../components/ui'
 
 type Onglet = 'suivi' | 'dossiers' | 'nommage' | 'ciblage' | 'cadence' | 'validation' | 'contenu'
 
@@ -541,30 +540,37 @@ function PointDeDepart({
             ))}
           </select>
 
-          <p className="mt-2 text-xs text-mist-600">
+          {/*
+            Ce resume-la ne se replie pas : c'est le seul endroit qui dit
+            combien de videos vont reellement entrer, et le lire APRES avoir
+            choisi serait trop tard.
+          */}
+          <p className="mt-2 text-xs text-mist-500">
             {valeur ? (
               <>
-                Les <span className="text-mist-300">{videosAvant}</span> video
-                {videosAvant > 1 ? 's' : ''} des {avant.length} journee
-                {avant.length > 1 ? 's' : ''} anterieures sont considerees comme deja publiees et
-                ne seront jamais reprises. Les{' '}
-                <span className="text-ok-400">{videosApres}</span> restantes entrent en reserve,
-                dans l ordre du temps.
+                <span className="text-mist-300">{videosAvant}</span> video
+                {videosAvant > 1 ? 's' : ''} ignoree{videosAvant > 1 ? 's' : ''},{' '}
+                <span className="text-ok-400">{videosApres}</span> a traiter.
               </>
             ) : (
               <>
-                Les <span className="text-mist-300">{videosApres}</span> videos du dossier entrent
-                en reserve, la plus ancienne en premier. Choisis une journee si une partie a deja
-                ete publiee a la main.
+                <span className="text-ok-400">{videosApres}</span> videos entreront en reserve, la
+                plus ancienne en premier.
               </>
             )}
           </p>
 
-          {vuA && (
-            <p className="mt-1 text-xs text-mist-600">
-              Liste relevee sur ton disque {relative(vuA)}.
+          <Aide>
+            <p>
+              Les journees anterieures a celle-ci sont considerees comme deja publiees, et ne
+              seront jamais reprises. La journee choisie, elle, EST traitee.
             </p>
-          )}
+            <p className="mt-2">
+              A utiliser quand une partie du dossier est deja partie a la main. Avancer ce point
+              plus tard ne supprime rien : c est un filtre a l entree, pas un menage.
+            </p>
+            {vuA && <p className="mt-2 text-mist-600">Liste relevee sur ton disque {relative(vuA)}.</p>}
+          </Aide>
         </>
       ) : (
         <>
@@ -574,11 +580,12 @@ function PointDeDepart({
             value={valeur}
             onChange={(e) => onChange(e.target.value)}
           />
-          <p className="mt-1 text-xs text-mist-600">
+          <Aide titre="Pourquoi une date et pas une liste">
             Le watcher n a pas encore rapporte le contenu de ce dossier. Enregistre-le, laisse
-            passer une minute, et la liste des journees reelles apparaitra ici. En attendant, une
-            date fonctionne aussi : la journee choisie est traitee, celles d avant sont ignorees.
-          </p>
+            passer une minute, et la liste de tes journees reelles apparaitra ici. En attendant,
+            une date fonctionne aussi : la journee choisie est traitee, celles d avant sont
+            ignorees.
+          </Aide>
         </>
       )}
     </div>
@@ -616,18 +623,20 @@ function FormulaireDossier({
   const parChemin = valeur.mode_nommage === 'chemin'
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <label className="block">
         <span className="label">Chemin du dossier</span>
         <input
           className="field font-mono text-xs"
           value={valeur.chemin}
           onChange={(e) => set({ chemin: e.target.value })}
-          placeholder="C:\\TradeReels\\ready_to_post"
+          placeholder={'C:\\TradeReels\\ready_to_post'}
         />
-        <span className="mt-1 block text-xs text-mist-600">
-          Le chemin doit exister sur le PC ou tourne le watcher.
-        </span>
+        <Aide>
+          Le chemin complet, tel qu il apparait dans la barre d adresse de l Explorateur Windows.
+          Il doit exister sur le PC ou tourne le watcher. Pour l obtenir sans faute de frappe :
+          ouvre le dossier, clique dans la barre d adresse, copie, colle ici.
+        </Aide>
       </label>
 
       <div>
@@ -635,29 +644,20 @@ function FormulaireDossier({
         <div className="space-y-2">
           {(
             [
-              {
-                v: 'champs' as const,
-                label: 'Dans le nom du fichier',
-                aide: 'EdgeSyncFX_mon-sujet_en.mp4. Les videos sont rangees dans « traite » apres coup.',
-              },
-              {
-                v: 'chemin' as const,
-                label: 'Dans l arborescence',
-                aide: 'JJMMAAAA/1_matin/video.mp4. Pour un dossier deja organise par un autre outil, qu il ne faut pas remuer.',
-              },
+              { v: 'champs' as const, label: 'Dans le nom du fichier' },
+              { v: 'chemin' as const, label: 'Dans l arborescence' },
             ]
           ).map((o) => (
             <label
               key={o.v}
-              className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+              className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
                 valeur.mode_nommage === o.v
-                  ? 'border-brand-500/50 bg-brand-500/10'
-                  : 'border-ink-700'
+                  ? 'border-brand-500/50 bg-brand-500/10 text-mist-100'
+                  : 'border-ink-700 text-mist-300'
               }`}
             >
               <input
                 type="radio"
-                className="mt-1"
                 checked={valeur.mode_nommage === o.v}
                 onChange={() =>
                   set(
@@ -667,19 +667,32 @@ function FormulaireDossier({
                   )
                 }
               />
-              <span>
-                <span className="block text-mist-100">{o.label}</span>
-                <span className="block text-xs text-mist-600">{o.aide}</span>
-              </span>
+              {o.label}
             </label>
           ))}
         </div>
+
+        <Aide titre="Lequel choisir">
+          <p>
+            <span className="text-mist-100">Dans le nom du fichier</span> : tu jettes des videos
+            dans un dossier, en les nommant toi-meme{' '}
+            <span className="font-mono">EdgeSyncFX_mon-sujet_en.mp4</span>. Elles sont rangees dans
+            un sous-dossier « traite » une fois prises.
+          </p>
+          <p className="mt-2">
+            <span className="text-mist-100">Dans l arborescence</span> : le dossier est deja
+            organise par un autre outil, comme{' '}
+            <span className="font-mono">JJMMAAAA/1_matin/video.mp4</span>. Rien n est renomme, rien
+            n est deplace. C est le choix pour TradeReels.
+          </p>
+        </Aide>
       </div>
 
       <div>
         <span className="label">
           {parChemin ? 'Marques alimentees par ce dossier' : 'Marque du dossier'}
         </span>
+
         {parChemin ? (
           <>
             <div className="flex flex-wrap gap-2">
@@ -709,11 +722,12 @@ function FormulaireDossier({
                 )
               })}
             </div>
-            <span className="mt-1.5 block text-xs text-mist-600">
-              Chaque video entre une fois PAR MARQUE cochee, dans sa propre file. Une meme video
-              peut donc partir sur les trois avec trois textes differents, sans jamais compter deux
-              fois.
-            </span>
+            <Aide>
+              Chaque video entre une fois PAR MARQUE cochee, dans sa propre file d attente. Une
+              meme video part donc sur les trois avec trois textes differents, sans jamais compter
+              deux fois. Si tu ajoutes une quatrieme marque dans six mois, elle rattrapera tout
+              l historique toute seule.
+            </Aide>
           </>
         ) : (
           <>
@@ -729,9 +743,10 @@ function FormulaireDossier({
                 </option>
               ))}
             </select>
-            <span className="mt-1 block text-xs text-mist-600">
-              Une marque imposee ici dispense de l ecrire dans chaque nom de fichier.
-            </span>
+            <Aide>
+              Une marque imposee ici dispense de l ecrire dans chaque nom de fichier : tu peux
+              alors nommer tes videos <span className="font-mono">mon-sujet_en.mp4</span>.
+            </Aide>
           </>
         )}
       </div>
@@ -745,12 +760,20 @@ function FormulaireDossier({
             onChange={(e) => set({ modele_sujet: e.target.value })}
             placeholder="Seance de trading en accelere sur MT5, {creneau} du {date}"
           />
-          <span className="mt-1 block text-xs text-mist-600">
-            Le chemin ne donne qu une date et un moment : c est ce modele qui dit de quoi parlent
-            les videos. <span className="font-mono">{'{date}'}</span> et{' '}
-            <span className="font-mono">{'{creneau}'}</span> sont remplaces. Tu peux corriger le
-            sujet video par video dans la Reserve.
-          </span>
+          <Aide>
+            <p>
+              Le chemin ne donne qu une date et un moment. C est ce modele qui dit de quoi parlent
+              les videos, et c est lui que le modele de langage recevra pour ecrire les textes.
+            </p>
+            <p className="mt-2">
+              <span className="font-mono">{'{date}'}</span> devient « 7 septembre 2026 »,{' '}
+              <span className="font-mono">{'{creneau}'}</span> devient « du matin », « de
+              l apres-midi » ou « du soir ».
+            </p>
+            <p className="mt-2">
+              Tu peux corriger le sujet video par video dans la Reserve, si l une merite mieux.
+            </p>
+          </Aide>
         </label>
       )}
 
@@ -776,41 +799,49 @@ function FormulaireDossier({
             </option>
           ))}
         </select>
+        <Aide>
+          Quels comptes sont vises par les videos de ce dossier. Les profils se creent dans
+          l onglet Ciblage : tu peux en avoir un « tous les comptes », un « seulement les reseaux
+          courts », un « test sur un seul compte ».
+        </Aide>
       </label>
 
-      <div className="space-y-2">
-        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-ink-700 px-3 py-2">
-          <input
-            type="checkbox"
-            className="mt-1"
-            checked={valeur.recursif}
-            onChange={(e) => set({ recursif: e.target.checked })}
-          />
-          <span>
-            <span className="block text-sm text-mist-100">Parcourir les sous-dossiers</span>
-            <span className="block text-xs text-mist-600">
-              Sans cela, seules les videos posees a la racine sont vues.
-            </span>
-          </span>
-        </label>
+      <div>
+        <span className="label">Options du ramassage</span>
+        <div className="space-y-2">
+          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-ink-700 px-3 py-2 text-sm text-mist-300">
+            <input
+              type="checkbox"
+              checked={valeur.recursif}
+              onChange={(e) => set({ recursif: e.target.checked })}
+            />
+            Parcourir les sous-dossiers
+          </label>
 
-        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-ink-700 px-3 py-2">
-          <input
-            type="checkbox"
-            className="mt-1"
-            checked={valeur.deplacer}
-            onChange={(e) => set({ deplacer: e.target.checked })}
-          />
-          <span>
-            <span className="block text-sm text-mist-100">
-              Ranger les videos traitees dans « traite »
-            </span>
-            <span className="block text-xs text-mist-600">
-              A decocher pour une archive produite par un autre outil : la deranger casserait son
-              organisation. Le watcher se souvient de ce qu il a vu, il ne relira pas deux fois.
-            </span>
-          </span>
-        </label>
+          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-ink-700 px-3 py-2 text-sm text-mist-300">
+            <input
+              type="checkbox"
+              checked={valeur.deplacer}
+              onChange={(e) => set({ deplacer: e.target.checked })}
+            />
+            Ranger les videos traitees dans « traite »
+          </label>
+        </div>
+
+        <Aide>
+          <p>
+            <span className="text-mist-100">Parcourir les sous-dossiers</span> : sans cela, seules
+            les videos posees a la racine sont vues. Indispensable pour une arborescence par date.
+          </p>
+          <p className="mt-2">
+            <span className="text-mist-100">Ranger dans « traite »</span> : a decocher pour une
+            archive produite par un autre outil, que la deranger casserait. Le watcher se souvient
+            de ce qu il a vu, il ne relira pas deux fois.
+          </p>
+          <p className="mt-2 text-mist-600">
+            Ces deux cases se reglent toutes seules quand tu choisis « Dans l arborescence ».
+          </p>
+        </Aide>
       </div>
     </div>
   )
@@ -1017,6 +1048,58 @@ function Dossiers({
 // Nommage
 // ---------------------------------------------------------------------------
 
+/** Une couleur par element, la meme partout sur l'ecran. */
+const TEINTE_CHAMP: Record<string, { texte: string; fond: string }> = {
+  marque: { texte: 'text-brand-400', fond: 'bg-brand-400/10' },
+  sujet: { texte: 'text-ok-400', fond: 'bg-ok-400/10' },
+  langue: { texte: 'text-warn-400', fond: 'bg-warn-400/10' },
+  variante: { texte: 'text-idle-400', fond: 'bg-idle-400/10' },
+}
+
+const VALEURS_EXEMPLE: Record<string, string> = {
+  marque: 'EdgeSyncFX',
+  sujet: 'backtest-vs-real-account',
+  langue: 'en',
+  variante: 'v2',
+}
+
+/**
+ * Un nom d'exemple, decoupe et etiquete.
+ *
+ * C'est la piece qui explique la regle. Une phrase decrivant « marque puis
+ * separateur puis sujet » se lit trois fois avant d'etre comprise ; le meme
+ * nom decoupe et colore se comprend d'un coup d'oeil, et la couleur se
+ * retrouve ensuite sur chaque champ du formulaire.
+ */
+function NomDecompose({ nommage }: { nommage: ConfigAuto['nommage'] }) {
+  const sep = nommage.separateur || '_'
+
+  return (
+    <div className="rounded-xl border border-ink-700 bg-ink-850 p-4">
+      <div className="flex flex-wrap items-end gap-x-1 gap-y-3 font-mono text-sm">
+        {nommage.ordre.map((cle, i) => {
+          const champ = CHAMPS_NOM.find((c) => c.cle === cle)
+          const teinte = TEINTE_CHAMP[cle] ?? { texte: 'text-mist-300', fond: 'bg-ink-800' }
+          return (
+            <span key={cle} className="flex items-end gap-1">
+              {i > 0 && <span className="pb-1 text-mist-600">{sep}</span>}
+              <span className="flex flex-col items-center gap-1">
+                <span className={`rounded px-1.5 py-0.5 ${teinte.fond} ${teinte.texte}`}>
+                  {VALEURS_EXEMPLE[cle] ?? cle}
+                </span>
+                <span className={`text-[10px] font-sans ${teinte.texte}`}>
+                  {(champ?.label ?? cle).toLowerCase()}
+                </span>
+              </span>
+            </span>
+          )
+        })}
+        <span className="pb-1 text-mist-600">.mp4</span>
+      </div>
+    </div>
+  )
+}
+
 function Nommage({
   config,
   busy,
@@ -1068,96 +1151,142 @@ function Nommage({
     <div className="space-y-5">
       <section className="panel p-5">
         <h2 className="mb-1 font-semibold">La regle de nommage</h2>
-        <p className="mb-2 text-sm text-mist-500">
-          Ce que le watcher lit dans le nom d un fichier. Avec la regle actuelle, ces trois noms
-          sont valides :
+        <p className="mb-4 text-sm text-mist-500">
+          Quand tu deposes une video, le watcher doit savoir a quelle marque elle appartient, de
+          quoi elle parle et dans quelle langue ecrire. Il le lit dans le nom du fichier, decoupe
+          comme ceci :
         </p>
-        <ul className="mb-4 space-y-1">
-          {exemplesNom(etat).map((e) => (
-            <li key={e} className="font-mono text-xs text-mist-100">
-              {e}
-            </li>
-          ))}
-        </ul>
 
-        <div className="space-y-4">
+        <NomDecompose nommage={etat} />
+
+        <Aide titre="Et si mes fichiers ne sont pas nommes comme ca">
+          <p>
+            Cette regle ne concerne que les dossiers regles sur « Dans le nom du fichier ». Un
+            dossier deja organise par un autre outil, comme TradeReels, se lit par son
+            arborescence et ignore completement cette page.
+          </p>
+          <p className="mt-2">
+            Tu peux aussi imposer la marque au niveau du dossier : elle disparait alors du nom, et
+            tu ecris seulement <span className="font-mono">mon-sujet_en.mp4</span>.
+          </p>
+        </Aide>
+
+        <div className="mt-6 space-y-5">
           <label className="block max-w-xs">
-            <span className="label">Separateur</span>
+            <span className="label">Le separateur</span>
             <input
               className="field font-mono"
               maxLength={3}
               value={etat.separateur}
               onChange={(e) => set({ separateur: e.target.value })}
             />
-            <span className="mt-1 block text-xs text-mist-600">
-              Un caractere qui n apparait jamais dans un sujet. Le tiret bas convient bien, le
-              tiret simple non : il sert a separer les mots du sujet.
-            </span>
+            <Aide>
+              Le caractere qui separe les trois parties. Il ne doit JAMAIS apparaitre a l interieur
+              d une partie. Le tiret bas convient bien. Le tiret simple ne convient pas : il sert
+              deja a separer les mots du sujet, et tout se melangerait.
+            </Aide>
           </label>
 
           <div>
-            <span className="label">Ordre des elements</span>
+            <span className="label">Les elements, dans l ordre</span>
+
             <div className="space-y-2">
               {etat.ordre.map((cle, i) => {
                 const champ = CHAMPS_NOM.find((c) => c.cle === cle)
+                const teinte = TEINTE_CHAMP[cle] ?? { texte: 'text-mist-300', fond: 'bg-ink-800' }
                 return (
                   <div
                     key={cle}
-                    className="flex items-center gap-2 rounded-lg border border-ink-700 px-3 py-2"
+                    className="flex items-center gap-3 rounded-lg border border-ink-700 px-3 py-2.5"
                   >
-                    <span className="w-5 text-xs tabular-nums text-mist-600">{i + 1}</span>
-                    <span className="flex-1 text-sm">
-                      {champ?.label ?? cle}
-                      <span className="ml-2 text-xs text-mist-600">{champ?.aide}</span>
-                      {cle === 'marque' && (
-                        <span className="ml-2 text-xs text-mist-600">
-                          la casse n a pas d importance
+                    <span className="w-4 shrink-0 text-xs tabular-nums text-mist-600">{i + 1}</span>
+
+                    <span className="min-w-0 flex-1">
+                      <span className={`block text-sm font-medium ${teinte.texte}`}>
+                        {champ?.label ?? cle}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-mist-600">
+                        {cle === 'marque'
+                          ? 'EdgeSyncFX, BigBossGrowth ou CosmicSucces. La casse n a pas d importance.'
+                          : cle === 'sujet'
+                            ? 'Les mots separes par des tirets simples, qui redeviennent des espaces.'
+                            : cle === 'langue'
+                              ? 'en ou fr, en deux lettres.'
+                              : (champ?.aide ?? '')}
+                      </span>
+                    </span>
+
+                    <span className="flex shrink-0 items-center gap-0.5">
+                      <button
+                        className="rounded px-1.5 py-1 text-mist-500 hover:bg-ink-800 hover:text-mist-100 disabled:opacity-30"
+                        onClick={() => deplacer(cle, -1)}
+                        disabled={i === 0}
+                        aria-label={`Monter ${champ?.label ?? cle}`}
+                        title="Monter"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        className="rounded px-1.5 py-1 text-mist-500 hover:bg-ink-800 hover:text-mist-100 disabled:opacity-30"
+                        onClick={() => deplacer(cle, 1)}
+                        disabled={i === etat.ordre.length - 1}
+                        aria-label={`Descendre ${champ?.label ?? cle}`}
+                        title="Descendre"
+                      >
+                        ↓
+                      </button>
+                      {cle === 'sujet' ? (
+                        <span
+                          className="px-1.5 text-mist-700"
+                          title="Le sujet ne peut pas etre retire : sans lui, il n y a rien a ecrire"
+                        >
+                          ✕
                         </span>
+                      ) : (
+                        <button
+                          className="rounded px-1.5 py-1 text-bad-400 hover:bg-ink-800"
+                          onClick={() => basculerChamp(cle)}
+                          aria-label={`Retirer ${champ?.label ?? cle}`}
+                          title="Retirer du nom"
+                        >
+                          ✕
+                        </button>
                       )}
                     </span>
-                    <button
-                      className="rounded px-1.5 text-mist-500 hover:bg-ink-800 hover:text-mist-100"
-                      onClick={() => deplacer(cle, -1)}
-                      aria-label="Monter"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      className="rounded px-1.5 text-mist-500 hover:bg-ink-800 hover:text-mist-100"
-                      onClick={() => deplacer(cle, 1)}
-                      aria-label="Descendre"
-                    >
-                      ↓
-                    </button>
-                    {cle !== 'sujet' && (
-                      <button
-                        className="rounded px-1.5 text-bad-400 hover:bg-ink-800"
-                        onClick={() => basculerChamp(cle)}
-                        aria-label="Retirer"
-                      >
-                        ✕
-                      </button>
-                    )}
                   </div>
                 )
               })}
             </div>
 
-            <div className="mt-2 flex flex-wrap gap-2">
-              {CHAMPS_NOM.filter((c) => !etat.ordre.includes(c.cle)).map((c) => (
-                <button
-                  key={c.cle}
-                  className="rounded-lg border border-ink-700 px-2.5 py-1 text-xs text-mist-500 hover:text-mist-100"
-                  onClick={() => basculerChamp(c.cle)}
-                >
-                  + {c.label}
-                </button>
-              ))}
-            </div>
+            {CHAMPS_NOM.filter((c) => !etat.ordre.includes(c.cle)).length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {CHAMPS_NOM.filter((c) => !etat.ordre.includes(c.cle)).map((c) => (
+                  <button
+                    key={c.cle}
+                    className="rounded-lg border border-ink-700 px-2.5 py-1 text-xs text-mist-500 hover:text-mist-100"
+                    onClick={() => basculerChamp(c.cle)}
+                  >
+                    + {c.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <Aide>
+              <p>
+                Les fleches changent l ordre dans lequel les parties apparaissent. L exemple en
+                haut de page suit tes changements en direct.
+              </p>
+              <p className="mt-2">
+                La croix retire une partie du nom : sans « Langue », tes fichiers s appellent{' '}
+                <span className="font-mono">EdgeSyncFX_mon-sujet.mp4</span> et la langue par defaut
+                s applique. Le sujet, lui, ne se retire pas.
+              </p>
+            </Aide>
           </div>
 
           <label className="block max-w-xs">
-            <span className="label">Langues reconnues</span>
+            <span className="label">Langues acceptees</span>
             <input
               className="field font-mono"
               value={etat.languesReconnues.join(' ')}
@@ -1171,52 +1300,53 @@ function Nommage({
               }
               placeholder="en fr"
             />
-            <span className="mt-1 block text-xs text-mist-600">
+            <Aide>
               Codes a deux lettres, separes par des espaces. Un fichier portant une langue absente
-              de cette liste est mis de cote : mieux vaut corriger le nom que publier dans une
-              langue tiree au hasard.
-            </span>
+              de cette liste est mis de cote plutot que traite : mieux vaut corriger le nom que
+              publier dans une langue tiree au hasard.
+            </Aide>
           </label>
 
           <div>
-            <span className="label">Si le nom ne suit pas la regle</span>
+            <span className="label">Si un nom ne suit pas la regle</span>
             <div className="space-y-2">
               {(
                 [
-                  {
-                    v: 'rejeter' as const,
-                    label: 'Mettre le fichier de cote',
-                    aide: 'Il reste en place, apparait dans le suivi avec la raison, et tu peux le rejouer apres correction.',
-                  },
-                  {
-                    v: 'defauts' as const,
-                    label: 'Traiter avec des valeurs par defaut',
-                    aide: 'Ce qui manque est comble par les valeurs ci-dessous.',
-                  },
+                  { v: 'rejeter' as const, label: 'Mettre le fichier de cote' },
+                  { v: 'defauts' as const, label: 'Le traiter avec des valeurs par defaut' },
                 ]
               ).map((o) => (
                 <label
                   key={o.v}
-                  className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
                     etat.surNonConforme === o.v
-                      ? 'border-brand-500/50 bg-brand-500/10'
-                      : 'border-ink-700'
+                      ? 'border-brand-500/50 bg-brand-500/10 text-mist-100'
+                      : 'border-ink-700 text-mist-300'
                   }`}
                 >
                   <input
                     type="radio"
                     name="non-conforme"
-                    className="mt-1"
                     checked={etat.surNonConforme === o.v}
                     onChange={() => set({ surNonConforme: o.v })}
                   />
-                  <span>
-                    <span className="block text-mist-100">{o.label}</span>
-                    <span className="block text-xs text-mist-600">{o.aide}</span>
-                  </span>
+                  {o.label}
                 </label>
               ))}
             </div>
+
+            <Aide>
+              <p>
+                <span className="text-mist-100">Mettre de cote</span> : le fichier reste ou il est,
+                apparait dans l onglet Suivi avec la raison, et tu le rejoues apres l avoir
+                renomme. Rien n est perdu.
+              </p>
+              <p className="mt-2">
+                <span className="text-mist-100">Valeurs par defaut</span> : ce qui manque est
+                comble automatiquement. Plus rapide, mais tu peux te retrouver avec une publication
+                que tu n avais pas prevue.
+              </p>
+            </Aide>
           </div>
 
           {etat.surNonConforme === 'defauts' && (
@@ -1236,29 +1366,31 @@ function Nommage({
                   className="field"
                   value={etat.defauts.langue}
                   onChange={(e) => set({ defauts: { ...etat.defauts, langue: e.target.value } })}
-                  placeholder="fr"
+                  placeholder="en"
                 />
               </label>
             </div>
           )}
+        </div>
 
-          <div className="flex justify-end">
-            <button
-              className="btn btn-primary"
-              disabled={busy}
-              onClick={() => void onEnregistrer({ ...config, nommage: etat })}
-            >
-              {busy ? 'Enregistrement...' : 'Enregistrer'}
-            </button>
-          </div>
+        <div className="mt-6 flex items-center justify-end gap-2">
+          <span className="mr-auto text-xs text-mist-600">
+            Tes modifications ne sont enregistrees qu avec ce bouton.
+          </span>
+          <button
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={() => void onEnregistrer({ ...config, nommage: etat })}
+          >
+            {busy ? 'Enregistrement...' : 'Enregistrer'}
+          </button>
         </div>
       </section>
 
       <section className="panel p-5">
-        <h2 className="mb-1 font-semibold">Tester un nom de fichier</h2>
+        <h2 className="mb-1 font-semibold">Essayer un nom avant de deposer</h2>
         <p className="mb-4 text-sm text-mist-500">
-          C est le serveur qui repond, celui-la meme qui traitera le vrai fichier. Enregistre tes
-          modifications avant de tester, sinon tu testes l ancienne regle.
+          Tape un nom de fichier, l app te montre ce qu elle en comprend.
         </p>
 
         <div className="flex flex-wrap gap-2">
@@ -1276,6 +1408,12 @@ function Nommage({
           </button>
         </div>
 
+        <Aide>
+          C est le serveur qui repond, celui-la meme qui traitera le vrai fichier : ce qu il affiche
+          est donc exactement ce qui se passera. Enregistre tes modifications avant de tester,
+          sinon tu testes l ancienne regle.
+        </Aide>
+
         {erreurTest && (
           <div className="mt-3">
             <Alert kind="error">{erreurTest}</Alert>
@@ -1287,14 +1425,16 @@ function Nommage({
             <dl className="grid gap-3 text-sm sm:grid-cols-4">
               {(
                 [
-                  ['Marque', lecture.marque],
-                  ['Sujet', lecture.sujet],
-                  ['Langue', lecture.langue],
-                  ['Variante', lecture.variante],
+                  ['marque', 'Marque', lecture.marque],
+                  ['sujet', 'Sujet', lecture.sujet],
+                  ['langue', 'Langue', lecture.langue],
+                  ['variante', 'Variante', lecture.variante],
                 ] as const
-              ).map(([label, valeur]) => (
-                <div key={label}>
-                  <dt className="text-xs text-mist-600">{label}</dt>
+              ).map(([cle, label, valeur]) => (
+                <div key={cle}>
+                  <dt className={`text-xs ${TEINTE_CHAMP[cle]?.texte ?? 'text-mist-600'}`}>
+                    {label}
+                  </dt>
                   <dd className={valeur ? 'text-mist-100' : 'text-mist-600'}>
                     {valeur || 'non lu'}
                   </dd>
@@ -1304,9 +1444,7 @@ function Nommage({
 
             <div className="mt-3">
               {lecture.conforme ? (
-                <p className="text-xs text-ok-400">
-                  Ce nom suit la regle. Le fichier serait traite.
-                </p>
+                <p className="text-xs text-ok-400">Ce nom suit la regle, le fichier serait traite.</p>
               ) : (
                 <p className="text-xs text-warn-400">
                   Il manque : {lecture.manquants.join(', ')}.{' '}
@@ -1347,10 +1485,15 @@ function Ciblage({
   return (
     <section className="panel p-5">
       <h2 className="mb-1 font-semibold">Profils de ciblage</h2>
-      <p className="mb-4 text-sm text-mist-500">
-        Un profil dit quels comptes d une marque sont vises. Chaque dossier surveille en choisit
-        un. Un profil sans plateforme ni compte precis vise tous les comptes actifs de la marque.
+      <p className="mb-2 text-sm text-mist-500">
+        Un profil dit quels comptes sont vises. Chaque dossier surveille en choisit un.
       </p>
+      <Aide>
+        Un profil sans plateforme ni compte precis vise tous les comptes actifs de la marque. C est
+        le cas courant. Les autres servent a publier plus etroitement : un profil « reseaux courts »
+        qui exclut YouTube, un profil « test » sur un seul compte pour verifier une nouvelle marque
+        sans exposer les autres.
+      </Aide>
 
       <div className="space-y-4">
         {profils.map((p, i) => (
@@ -1400,8 +1543,8 @@ function Ciblage({
               </div>
               <p className="mt-1.5 text-xs text-mist-600">
                 {p.plateformes.length === 0
-                  ? 'Aucune cochee : toutes les plateformes de la marque sont visees.'
-                  : `Seules ces ${p.plateformes.length} plateformes. Une marque sans compte sur l une d elles l ignore simplement.`}
+                  ? 'Aucune cochee : toutes les plateformes sont visees.'
+                  : `Seules ces ${p.plateformes.length}. Une marque sans compte sur l une d elles l ignore.`}
               </p>
             </div>
 
@@ -1433,10 +1576,11 @@ function Ciblage({
                   )
                 })}
               </div>
-              <p className="mt-1.5 text-xs text-mist-600">
+              <Aide titre="Quand s en servir">
                 Des comptes nommes ici l emportent sur le filtre de plateforme. C est ce qui permet
-                un profil de test sur un seul compte.
-              </p>
+                un profil de test sur un seul compte, pour verifier ce que produit une nouvelle
+                marque avant de la lacher partout.
+              </Aide>
             </div>
           </div>
         ))}
@@ -1486,28 +1630,77 @@ function CadenceOnglet({
 
   function majJour(jour: string, n: number) {
     if (marque) {
-      setEtat({
-        ...etat,
-        parMarque: { ...etat.parMarque, [marque]: { ...grille, [jour]: n } },
-      })
+      setEtat({ ...etat, parMarque: { ...etat.parMarque, [marque]: { ...grille, [jour]: n } } })
     } else {
       setEtat({ ...etat, defaut: { ...etat.defaut, [jour]: n } })
     }
   }
 
+  const total = JOURS_CADENCE.reduce((n, j) => n + (grille[j.cle] ?? 0), 0)
+
   return (
     <div className="space-y-5">
       <section className="panel p-5">
-        <h2 className="mb-1 font-semibold">Publications par jour</h2>
-        <p className="mb-4 text-sm text-mist-500">
-          Combien de campagnes au maximum par jour et par marque. Une video deposee au-dela part
-          le jour suivant qui a de la place.
-        </p>
+        <h2 className="mb-3 font-semibold">Le moteur</h2>
+
+        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-ink-700 px-3 py-3">
+          <input
+            type="checkbox"
+            checked={moteur.actif}
+            onChange={(e) => setMoteur({ ...moteur, actif: e.target.checked })}
+          />
+          <span className="text-sm text-mist-100">
+            Programmer les videos automatiquement
+          </span>
+        </label>
+
+        <Aide>
+          <p>
+            Toutes les quinze minutes, le moteur prend le haut de la file de la Reserve et cree les
+            campagnes, en respectant la cadence reglee plus bas.
+          </p>
+          <p className="mt-2">
+            Eteint, les videos s accumulent dans la Reserve sans jamais partir. Tu peux quand meme
+            lancer un passage a la main, depuis la Reserve.
+          </p>
+        </Aide>
+
+        {moteur.actif && (
+          <label className="mt-4 block max-w-xs">
+            <span className="label">Programmer jusqu a</span>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={30}
+                className="field tabular-nums"
+                value={moteur.horizonJours}
+                onChange={(e) =>
+                  setMoteur({ ...moteur, horizonJours: Math.max(1, Number(e.target.value) || 3) })
+                }
+              />
+              <span className="shrink-0 text-xs text-mist-600">jours a l avance</span>
+            </div>
+            <Aide>
+              Une campagne creee peut encore etre corrigee, mais plus reordonnee. Trois jours
+              laissent le temps de voir venir sans figer un mois entier.
+            </Aide>
+          </label>
+        )}
+      </section>
+
+      <section className="panel p-5">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-semibold">Combien de videos par jour</h2>
+          <span className="text-xs text-mist-600">
+            {total} par semaine{marque ? ` pour ${marque}` : ''}
+          </span>
+        </div>
 
         <label className="mb-4 block max-w-xs">
-          <span className="label">Regler pour</span>
+          <span className="label">Pour</span>
           <select className="field" value={marque} onChange={(e) => setMarque(e.target.value)}>
-            <option value="">Toutes les marques (valeur par defaut)</option>
+            <option value="">Toutes les marques</option>
             {marques.map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -1516,21 +1709,33 @@ function CadenceOnglet({
           </select>
         </label>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+        <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
           {JOURS_CADENCE.map((j) => (
             <label key={j.cle} className="block">
-              <span className="label">{j.label}</span>
+              <span className="mb-1 block text-center text-xs text-mist-500">
+                {j.label.slice(0, 3)}
+              </span>
               <input
                 type="number"
                 min={0}
                 max={20}
-                className="field tabular-nums"
+                className="field text-center tabular-nums"
                 value={grille[j.cle] ?? 0}
                 onChange={(e) => majJour(j.cle, Math.max(0, Number(e.target.value) || 0))}
               />
             </label>
           ))}
         </div>
+
+        <Aide>
+          <p>
+            Le maximum de videos publiees par jour, pour une marque. Chaque video devient une
+            campagne, envoyee sur tous les comptes de cette marque.
+          </p>
+          <p className="mt-2">
+            Ce qui depasse n est pas perdu : ca part le premier jour suivant qui a de la place.
+          </p>
+        </Aide>
 
         {marque && etat.parMarque[marque] && (
           <button
@@ -1541,17 +1746,17 @@ function CadenceOnglet({
               setEtat({ ...etat, parMarque: suite })
             }}
           >
-            Revenir a la valeur par defaut pour {marque}
+            Revenir a la valeur commune pour {marque}
           </button>
         )}
       </section>
 
       <section className="panel p-5">
-        <h2 className="mb-4 font-semibold">Horaires et espacement</h2>
+        <h2 className="mb-3 font-semibold">A quelle heure</h2>
 
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="block">
-            <span className="label">Plage autorisee, debut</span>
+            <span className="label">Pas avant</span>
             <input
               type="time"
               className="field"
@@ -1560,7 +1765,7 @@ function CadenceOnglet({
             />
           </label>
           <label className="block">
-            <span className="label">Plage autorisee, fin</span>
+            <span className="label">Pas apres</span>
             <input
               type="time"
               className="field"
@@ -1570,241 +1775,209 @@ function CadenceOnglet({
           </label>
           <label className="block">
             <span className="label">Ecart entre comptes</span>
-            <input
-              type="number"
-              min={0}
-              max={240}
-              className="field tabular-nums"
-              value={etat.ecartMinutes}
-              onChange={(e) =>
-                setEtat({ ...etat, ecartMinutes: Math.max(0, Number(e.target.value) || 0) })
-              }
-            />
-            <span className="mt-1 block text-xs text-mist-600">
-              En minutes. Neuf comptes a la meme seconde se voient.
-            </span>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                max={240}
+                className="field tabular-nums"
+                value={etat.ecartMinutes}
+                onChange={(e) =>
+                  setEtat({ ...etat, ecartMinutes: Math.max(0, Number(e.target.value) || 0) })
+                }
+              />
+              <span className="shrink-0 text-xs text-mist-600">min</span>
+            </div>
           </label>
         </div>
+
+        <Aide>
+          <p>
+            Les publications du jour se repartissent dans cette plage. Avec trois par jour entre 9 h
+            et 21 h, elles tombent vers 9 h, 13 h et 17 h.
+          </p>
+          <p className="mt-2">
+            L ecart separe les comptes d une MEME video. Neuf comptes qui publient a la meme seconde
+            se remarquent.
+          </p>
+        </Aide>
       </section>
 
       <section className="panel p-5">
-        <h2 className="mb-1 font-semibold">Quand plusieurs videos arrivent d un coup</h2>
-        <div className="mt-3 space-y-2">
-          {(
-            [
-              {
-                v: 'etaler' as const,
-                label: 'Etaler sur les jours suivants',
-                aide: 'La cadence est respectee : le surplus part demain, apres-demain, et ainsi de suite.',
-              },
-              {
-                v: 'auPlusTot' as const,
-                label: 'Tout programmer au plus tot',
-                aide: 'La cadence est ignoree. Utile pour rattraper, dangereux au quotidien.',
-              },
-            ]
-          ).map((o) => (
-            <label
-              key={o.v}
-              className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
-                etat.afflux === o.v ? 'border-brand-500/50 bg-brand-500/10' : 'border-ink-700'
-              }`}
-            >
-              <input
-                type="radio"
-                name="afflux"
-                className="mt-1"
-                checked={etat.afflux === o.v}
-                onChange={() => setEtat({ ...etat, afflux: o.v })}
-              />
-              <span>
-                <span className="block text-mist-100">{o.label}</span>
-                <span className="block text-xs text-mist-600">{o.aide}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel p-5">
-        <h2 className="mb-1 font-semibold">Le moteur de cadence</h2>
+        <h2 className="mb-1 font-semibold">Cas particuliers</h2>
         <p className="mb-4 text-sm text-mist-500">
-          Il pioche dans la{' '}
-          <Link to="/bibliotheque" className="text-brand-400 hover:underline">
-            bibliotheque
-          </Link>{' '}
-          toutes les quinze minutes et cree les campagnes. Le watcher, lui, ne fait que deposer :
-          c est toi qui decides de l ordre.
+          Regles une fois, puis oublies. Les valeurs en place conviennent dans la plupart des cas.
         </p>
 
-        <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-xl border border-ink-700 p-3">
-          <input
-            type="checkbox"
-            className="mt-1"
-            checked={moteur.actif}
-            onChange={(e) => setMoteur({ ...moteur, actif: e.target.checked })}
-          />
-          <span>
-            <span className="block text-sm text-mist-100">Laisser le moteur tourner</span>
-            <span className="block text-xs text-mist-600">
-              Eteint, les videos s accumulent dans la bibliotheque sans etre programmees. Tu peux
-              toujours lancer un passage a la main depuis la bibliotheque.
-            </span>
-          </span>
-        </label>
-
-        <label className="block max-w-xs">
-          <span className="label">Remplir a l avance</span>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min={1}
-              max={30}
-              className="field tabular-nums"
-              value={moteur.horizonJours}
-              onChange={(e) =>
-                setMoteur({ ...moteur, horizonJours: Math.max(1, Number(e.target.value) || 3) })
-              }
-            />
-            <span className="shrink-0 text-xs text-mist-600">jours</span>
-          </div>
-          <span className="mt-1 block text-xs text-mist-600">
-            Jusqu ou le moteur programme. Trois jours laissent le temps de voir venir sans figer un
-            mois entier : une campagne creee peut encore etre corrigee, mais pas reordonnee.
-          </span>
-        </label>
-      </section>
-
-      <section className="panel p-5">
-        <h2 className="mb-1 font-semibold">Alerte de reserve</h2>
-        <p className="mb-4 text-sm text-mist-500">
-          Un message Telegram quand la bibliotheque descend sous le seuil, pour produire avant
-          d etre a sec. Une marque sans video voit ses creneaux sautes, et l alerte le dit.
-        </p>
-
-        <label className="mb-4 block max-w-xs">
-          <span className="label">Seuil par defaut</span>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min={0}
-              max={50}
-              className="field tabular-nums"
-              value={reserve.seuilParDefaut}
-              onChange={(e) =>
-                setReserve({ ...reserve, seuilParDefaut: Math.max(0, Number(e.target.value) || 0) })
-              }
-            />
-            <span className="shrink-0 text-xs text-mist-600">videos</span>
-          </div>
-        </label>
-
-        <div className="space-y-2">
-          {marques.map((m) => {
-            const propre = m in (reserve.seuilParMarque ?? {})
-            return (
-              <div
-                key={m}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink-700 px-3 py-2.5"
-              >
-                <span className="text-sm font-medium">{m}</span>
-                <div className="flex items-center gap-2">
+        <div className="space-y-5">
+          <div>
+            <span className="label">Quand plusieurs videos arrivent d un coup</span>
+            <div className="space-y-2">
+              {(
+                [
+                  { v: 'etaler' as const, label: 'Etaler sur les jours suivants' },
+                  { v: 'auPlusTot' as const, label: 'Tout programmer au plus tot' },
+                ]
+              ).map((o) => (
+                <label
+                  key={o.v}
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                    etat.afflux === o.v
+                      ? 'border-brand-500/50 bg-brand-500/10 text-mist-100'
+                      : 'border-ink-700 text-mist-300'
+                  }`}
+                >
                   <input
-                    type="number"
-                    min={0}
-                    max={50}
-                    className="field !w-20 tabular-nums"
-                    value={propre ? reserve.seuilParMarque[m] : reserve.seuilParDefaut}
-                    onChange={(e) =>
-                      setReserve({
-                        ...reserve,
-                        seuilParMarque: {
-                          ...reserve.seuilParMarque,
-                          [m]: Math.max(0, Number(e.target.value) || 0),
-                        },
-                      })
-                    }
+                    type="radio"
+                    name="afflux"
+                    checked={etat.afflux === o.v}
+                    onChange={() => setEtat({ ...etat, afflux: o.v })}
                   />
-                  {propre ? (
-                    <button
-                      className="text-xs text-mist-600 hover:text-mist-300"
-                      onClick={() => {
-                        const suite = { ...reserve.seuilParMarque }
-                        delete suite[m]
-                        setReserve({ ...reserve, seuilParMarque: suite })
-                      }}
-                    >
-                      par defaut
-                    </button>
-                  ) : (
-                    <span className="text-xs text-mist-600">par defaut</span>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </section>
+                  {o.label}
+                </label>
+              ))}
+            </div>
+            <Aide>
+              <p>
+                <span className="text-mist-100">Etaler</span> respecte la cadence : le surplus part
+                demain, apres-demain, et ainsi de suite. C est ce que tu veux au quotidien.
+              </p>
+              <p className="mt-2">
+                <span className="text-mist-100">Au plus tot</span> ignore la cadence et programme
+                tout tout de suite. Utile pour rattraper un retard, dangereux le reste du temps.
+              </p>
+            </Aide>
+          </div>
 
-      <section className="panel p-5">
-        <h2 className="mb-1 font-semibold">Si une plateforme est au quota</h2>
-        <p className="mb-3 text-sm text-mist-500">
-          Six envois YouTube par jour toutes chaines confondues, vingt-cinq publications Instagram
-          par 24 h et par compte.
-        </p>
+          <div>
+            <span className="label">Si une plateforme a atteint sa limite du jour</span>
+            <div className="space-y-2">
+              {(
+                [
+                  { v: 'reporter' as const, label: 'Decaler au lendemain' },
+                  { v: 'ignorer' as const, label: 'Publier sans cette plateforme' },
+                ]
+              ).map((o) => (
+                <label
+                  key={o.v}
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                    quotas.surDepassement === o.v
+                      ? 'border-brand-500/50 bg-brand-500/10 text-mist-100'
+                      : 'border-ink-700 text-mist-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="quota"
+                    checked={quotas.surDepassement === o.v}
+                    onChange={() => setQuotas({ surDepassement: o.v })}
+                  />
+                  {o.label}
+                </label>
+              ))}
+            </div>
+            <Aide>
+              Six envois YouTube par jour toutes chaines confondues, vingt-cinq publications
+              Instagram par 24 h et par compte. Ces limites viennent des plateformes, elles ne se
+              negocient pas.
+            </Aide>
+          </div>
 
-        <div className="space-y-2">
-          {(
-            [
-              {
-                v: 'reporter' as const,
-                label: 'Decaler au lendemain',
-                aide: 'La publication est quand meme creee, avec un creneau plus tard.',
-              },
-              {
-                v: 'ignorer' as const,
-                label: 'Ignorer cette plateforme',
-                aede: '',
-                aide: 'La campagne part sans elle. Le suivi dit lesquelles ont ete ecartees.',
-              },
-            ]
-          ).map((o) => (
-            <label
-              key={o.v}
-              className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
-                quotas.surDepassement === o.v
-                  ? 'border-brand-500/50 bg-brand-500/10'
-                  : 'border-ink-700'
-              }`}
-            >
+          <div>
+            <span className="label">Prevenir quand la Reserve se vide</span>
+            <div className="flex items-center gap-2">
               <input
-                type="radio"
-                name="quota"
-                className="mt-1"
-                checked={quotas.surDepassement === o.v}
-                onChange={() => setQuotas({ surDepassement: o.v })}
+                type="number"
+                min={0}
+                max={50}
+                className="field !w-24 tabular-nums"
+                value={reserve.seuilParDefaut}
+                onChange={(e) =>
+                  setReserve({
+                    ...reserve,
+                    seuilParDefaut: Math.max(0, Number(e.target.value) || 0),
+                  })
+                }
               />
-              <span>
-                <span className="block text-mist-100">{o.label}</span>
-                <span className="block text-xs text-mist-600">{o.aide}</span>
-              </span>
-            </label>
-          ))}
-        </div>
+              <span className="text-xs text-mist-600">videos restantes ou moins</span>
+            </div>
+            <Aide>
+              <p>
+                Un message Telegram quand une marque descend a ce niveau, pour produire avant d etre
+                a sec. Une marque a zero voit ses creneaux sautes, et l alerte le dit autrement.
+              </p>
+              <p className="mt-2">
+                Un seuil different par marque se regle ci-dessous, si l une produit plus vite que
+                les autres.
+              </p>
+            </Aide>
 
-        <div className="mt-5 flex justify-end">
-          <span className="mr-auto text-xs text-mist-600">
-            Tes modifications ne sont enregistrees qu avec ce bouton.
-          </span>
-          <button
-            className="btn btn-primary"
-            disabled={busy}
-            onClick={() => void onEnregistrer({ ...config, cadence: etat, quotas, moteur, reserve })}
-          >
-            {busy ? 'Enregistrement...' : 'Enregistrer'}
-          </button>
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs text-mist-600 hover:text-mist-300">
+                Un seuil different par marque
+              </summary>
+              <div className="mt-2 space-y-2">
+                {marques.map((m) => {
+                  const propre = m in (reserve.seuilParMarque ?? {})
+                  return (
+                    <div
+                      key={m}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink-700 px-3 py-2"
+                    >
+                      <span className="text-sm">{m}</span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          max={50}
+                          className="field !w-20 tabular-nums"
+                          value={propre ? reserve.seuilParMarque[m] : reserve.seuilParDefaut}
+                          onChange={(e) =>
+                            setReserve({
+                              ...reserve,
+                              seuilParMarque: {
+                                ...reserve.seuilParMarque,
+                                [m]: Math.max(0, Number(e.target.value) || 0),
+                              },
+                            })
+                          }
+                        />
+                        {propre ? (
+                          <button
+                            className="text-xs text-mist-600 hover:text-mist-300"
+                            onClick={() => {
+                              const suite = { ...reserve.seuilParMarque }
+                              delete suite[m]
+                              setReserve({ ...reserve, seuilParMarque: suite })
+                            }}
+                          >
+                            valeur commune
+                          </button>
+                        ) : (
+                          <span className="text-xs text-mist-600">valeur commune</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </details>
+          </div>
         </div>
       </section>
+
+      <div className="flex items-center justify-end gap-2">
+        <span className="mr-auto text-xs text-mist-600">
+          Tes modifications ne sont enregistrees qu avec ce bouton.
+        </span>
+        <button
+          className="btn btn-primary"
+          disabled={busy}
+          onClick={() => void onEnregistrer({ ...config, cadence: etat, quotas, moteur, reserve })}
+        >
+          {busy ? 'Enregistrement...' : 'Enregistrer'}
+        </button>
+      </div>
     </div>
   )
 }
@@ -1830,10 +2003,14 @@ function Validation({
   return (
     <section className="panel p-5">
       <h2 className="mb-1 font-semibold">Avant publication</h2>
-      <p className="mb-4 text-sm text-mist-500">
-        Une campagne « a valider » ne peut pas partir : le scheduler ne la voit pas tant qu elle n
-        est pas approuvee. Tu recois une alerte Telegram a chaque fois.
+      <p className="mb-2 text-sm text-mist-500">
+        Une campagne a valider ne peut pas partir tant que tu ne l as pas approuvee.
       </p>
+      <Aide>
+        Le planificateur ne voit que les publications validees : une campagne en attente ne risque
+        donc pas de partir par accident. Tu recois une alerte Telegram a chaque fois, et tu la
+        relis dans l onglet Suivi, ou dans Publications en filtrant sur « A valider ».
+      </Aide>
 
       <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-xl border border-ink-700 p-3">
         <input
@@ -1842,15 +2019,12 @@ function Validation({
           checked={etat.parDefaut}
           onChange={(e) => setEtat({ ...etat, parDefaut: e.target.checked })}
         />
-        <span>
-          <span className="block text-sm text-mist-100">
-            Demander validation par defaut
-          </span>
-          <span className="block text-xs text-mist-600">
-            S applique aux marques qui n ont pas de reglage propre ci-dessous.
-          </span>
-        </span>
+        <span className="text-sm text-mist-100">Demander validation par defaut</span>
       </label>
+      <Aide>
+        S applique aux marques qui n ont pas de reglage propre ci-dessous. Garde-le actif tant que
+        tu n as pas confiance dans ce que la generation produit.
+      </Aide>
 
       <div className="space-y-2">
         {marques.map((m) => {
@@ -1920,9 +2094,11 @@ function Validation({
           />
           <span className="shrink-0 text-xs text-mist-600">heures</span>
         </div>
-        <span className="mt-1 block text-xs text-mist-600">
-          Vingt-six heures laissent passer une nuit PC eteint sans crier au loup.
-        </span>
+        <Aide>
+          Le watcher se manifeste a chaque passage. Passe ce delai sans nouvelles, un bandeau rouge
+          apparait : PC eteint, ou script arrete. Vingt-six heures laissent passer une nuit sans
+          crier au loup.
+        </Aide>
       </label>
 
       <div className="mt-5 flex justify-end">
@@ -1976,14 +2152,16 @@ function ContenuOnglet({
     <div className="space-y-5">
       <section className="panel p-5">
         <h2 className="mb-1 font-semibold">Appel a l action et lien</h2>
-        <p className="mb-4 text-sm text-mist-500">
-          Ajoutes automatiquement au texte genere. Le ton, le vocabulaire et les mentions legales
-          se reglent ailleurs, dans{' '}
+        <p className="mb-2 text-sm text-mist-500">
+          Ajoutes automatiquement a la fin de chaque texte genere.
+        </p>
+        <Aide>
+          Le ton, le vocabulaire et les mentions legales se reglent ailleurs, dans{' '}
           <Link to="/consignes" className="text-brand-400 hover:underline">
             Textes
-          </Link>{' '}
-          : ici on ne fait qu ajouter ce qui manquait pour l automatisation.
-        </p>
+          </Link>
+          . Ici on n ajoute que le renvoi, qui ne concerne que l automatisation.
+        </Aide>
 
         <label className="mb-4 block max-w-xs">
           <span className="label">Marque</span>
@@ -2015,8 +2193,8 @@ function ContenuOnglet({
                 />
                 <span className="mt-1 block text-xs text-mist-600">
                   {(cta[p.value] ?? []).length > 1
-                    ? `${(cta[p.value] ?? []).length} variantes, employees a tour de role pour ne pas repeter la meme phrase.`
-                    : 'Ajoute plusieurs lignes pour alterner entre elles.'}
+                    ? `${(cta[p.value] ?? []).length} variantes, employees a tour de role.`
+                    : 'Une ligne par variante. Elles alternent d une publication a l autre.'}
                 </span>
               </label>
 
@@ -2035,8 +2213,8 @@ function ContenuOnglet({
                 />
                 <span className="mt-1 block text-xs text-mist-600">
                   {p.value === 'instagram' || p.value === 'tiktok'
-                    ? 'Ces plateformes ne rendent pas les liens cliquables dans le texte : « lien en bio » est plus utile qu une adresse.'
-                    : 'Une adresse complete fonctionne ici.'}
+                    ? 'Lien non cliquable ici : ecris plutot « lien en bio ».'
+                    : 'Une adresse complete fonctionne.'}
                 </span>
               </label>
             </div>

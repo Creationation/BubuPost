@@ -1,5 +1,48 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+
+/**
+ * Une explication repliee sous un reglage.
+ *
+ * Les ecrans de configuration portaient un paragraphe sous chaque champ. Pris
+ * un par un ils sont utiles ; empiles, ils noient le formulaire et on ne voit
+ * plus les champs. L'explication reste donc a un clic, jamais plus loin.
+ *
+ * Le depliage utilise une grille qui passe de 0fr a 1fr : c'est ce qui permet
+ * d'animer vers une hauteur automatique, ce qu'une transition sur la hauteur
+ * ne sait pas faire sans la mesurer en JavaScript.
+ */
+export function Aide({ titre = 'A quoi ca sert', children }: { titre?: string; children: ReactNode }) {
+  const [ouvert, setOuvert] = useState(false)
+
+  return (
+    <div className="mt-1.5">
+      <button
+        type="button"
+        onClick={() => setOuvert(!ouvert)}
+        aria-expanded={ouvert}
+        className="inline-flex items-center gap-1 rounded text-xs text-mist-600 transition-colors hover:text-brand-400"
+      >
+        <span aria-hidden="true" className={`transition-transform ${ouvert ? 'rotate-90' : ''}`}>
+          ›
+        </span>
+        {titre}
+      </button>
+
+      <div
+        className={`grid transition-[grid-template-rows,opacity] duration-200 ${
+          ouvert ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+        }`}
+      >
+        <div className="overflow-hidden">
+          <div className="mt-1.5 border-l-2 border-ink-700 pl-3 text-xs leading-relaxed text-mist-500">
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export function Chip({
   className = '',
