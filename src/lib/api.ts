@@ -669,6 +669,8 @@ export async function listerDossiers(): Promise<Dossier[]> {
 
 export type DossierInput = {
   chemin: string
+  /** Ce que contient ce dossier. Une source, pas une marque. */
+  nom?: string | null
   actif: boolean
   /** Marque unique. Laisser vide quand le dossier en alimente plusieurs. */
   marque: string | null

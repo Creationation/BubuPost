@@ -420,6 +420,7 @@ export type Database = {
           marques: string[] | null
           mode_nommage: string
           modele_sujet: string | null
+          nom: string | null
           ordre: number
           profil: string | null
           recursif: boolean
@@ -437,6 +438,7 @@ export type Database = {
           marques?: string[] | null
           mode_nommage?: string
           modele_sujet?: string | null
+          nom?: string | null
           ordre?: number
           profil?: string | null
           recursif?: boolean
@@ -454,6 +456,7 @@ export type Database = {
           marques?: string[] | null
           mode_nommage?: string
           modele_sujet?: string | null
+          nom?: string | null
           ordre?: number
           profil?: string | null
           recursif?: boolean

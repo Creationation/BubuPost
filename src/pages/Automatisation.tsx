@@ -471,9 +471,11 @@ function Suivi({
 // ---------------------------------------------------------------------------
 
 type ReglagesDossier = {
+  nom: string
   chemin: string
   marque: string
   marques: string[]
+  marqueDansLeNom: boolean
   profil: string
   recursif: boolean
   deplacer: boolean
@@ -484,9 +486,11 @@ type ReglagesDossier = {
 
 function dossierVide(profilParDefaut: string): ReglagesDossier {
   return {
+    nom: '',
     chemin: '',
     marque: '',
     marques: [],
+    marqueDansLeNom: false,
     profil: profilParDefaut,
     recursif: false,
     deplacer: true,
@@ -526,16 +530,11 @@ function PointDeDepart({
 
       {journees.length > 0 ? (
         <>
-          <select
-            className="field"
-            value={valeur}
-            onChange={(e) => onChange(e.target.value)}
-          >
+          <select className="field" value={valeur} onChange={(e) => onChange(e.target.value)}>
             <option value="">Tout traiter, depuis la plus ancienne</option>
             {journees.map((j) => (
               <option key={j.dossier} value={j.date}>
-                {j.dossier} · {dateLisible(j.date)} · {j.videos} video
-                {j.videos > 1 ? 's' : ''}
+                {j.dossier} · {dateLisible(j.date)} · {j.videos} video{j.videos > 1 ? 's' : ''}
               </option>
             ))}
           </select>
@@ -593,16 +592,13 @@ function PointDeDepart({
 }
 
 /**
- * Les reglages d'un dossier surveille.
+ * Les reglages d'une source de contenu.
  *
- * Deux familles de dossiers, et elles ne se ressemblent pas.
- *
- * Un dossier « boite de depot » : on y jette des videos nommees selon la
- * regle, elles sont traitees puis rangees. C'est le mode champs.
- *
- * Un dossier deja organise, produit par un autre outil : l'arborescence porte
- * l'information, on ne renomme rien et surtout on ne deplace rien. C'est le
- * mode chemin.
+ * Un dossier n'appartient PAS a une marque : c'est une source, avec sa propre
+ * identite, dont le contenu est ensuite distribue vers les marques ou il doit
+ * paraitre. Le meme dossier de reels de trading alimente les trois. Le
+ * formulaire suit donc trois questions, dans cet ordre : ce qu'on surveille,
+ * ce qu'on y trouve, et ou ca part.
  */
 function FormulaireDossier({
   valeur,
@@ -623,78 +619,168 @@ function FormulaireDossier({
   const parChemin = valeur.mode_nommage === 'chemin'
 
   return (
-    <div className="space-y-5">
-      <label className="block">
-        <span className="label">Chemin du dossier</span>
-        <input
-          className="field font-mono text-xs"
-          value={valeur.chemin}
-          onChange={(e) => set({ chemin: e.target.value })}
-          placeholder={'C:\\TradeReels\\ready_to_post'}
-        />
-        <Aide>
-          Le chemin complet, tel qu il apparait dans la barre d adresse de l Explorateur Windows.
-          Il doit exister sur le PC ou tourne le watcher. Pour l obtenir sans faute de frappe :
-          ouvre le dossier, clique dans la barre d adresse, copie, colle ici.
-        </Aide>
-      </label>
+    <div className="space-y-6">
+      {/* 1. Quel dossier */}
+      <div className="space-y-4">
+        <p className="text-xs font-semibold uppercase tracking-wider text-mist-500">
+          1. Quel dossier
+        </p>
 
-      <div>
-        <span className="label">Ou l information se trouve</span>
-        <div className="space-y-2">
-          {(
-            [
-              { v: 'champs' as const, label: 'Dans le nom du fichier' },
-              { v: 'chemin' as const, label: 'Dans l arborescence' },
-            ]
-          ).map((o) => (
-            <label
-              key={o.v}
-              className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
-                valeur.mode_nommage === o.v
-                  ? 'border-brand-500/50 bg-brand-500/10 text-mist-100'
-                  : 'border-ink-700 text-mist-300'
-              }`}
-            >
-              <input
-                type="radio"
-                checked={valeur.mode_nommage === o.v}
-                onChange={() =>
-                  set(
-                    o.v === 'chemin'
-                      ? { mode_nommage: o.v, recursif: true, deplacer: false }
-                      : { mode_nommage: o.v },
-                  )
-                }
-              />
-              {o.label}
-            </label>
-          ))}
-        </div>
+        <label className="block">
+          <span className="label">Ce que contient ce dossier</span>
+          <input
+            className="field"
+            value={valeur.nom}
+            onChange={(e) => set({ nom: e.target.value })}
+            placeholder="Reels de trading"
+          />
+          <Aide>
+            Un nom court pour t y retrouver. C est lui qui apparait dans les listes, plutot qu un
+            chemin Windows de soixante caracteres. Ce n est pas une marque : cette source pourra
+            alimenter plusieurs marques a la fois.
+          </Aide>
+        </label>
 
-        <Aide titre="Lequel choisir">
-          <p>
-            <span className="text-mist-100">Dans le nom du fichier</span> : tu jettes des videos
-            dans un dossier, en les nommant toi-meme{' '}
-            <span className="font-mono">EdgeSyncFX_mon-sujet_en.mp4</span>. Elles sont rangees dans
-            un sous-dossier « traite » une fois prises.
-          </p>
-          <p className="mt-2">
-            <span className="text-mist-100">Dans l arborescence</span> : le dossier est deja
-            organise par un autre outil, comme{' '}
-            <span className="font-mono">JJMMAAAA/1_matin/video.mp4</span>. Rien n est renomme, rien
-            n est deplace. C est le choix pour TradeReels.
-          </p>
-        </Aide>
+        <label className="block">
+          <span className="label">Son chemin sur le PC</span>
+          <input
+            className="field font-mono text-xs"
+            value={valeur.chemin}
+            onChange={(e) => set({ chemin: e.target.value })}
+            placeholder={'C:\\TradeReels\\ready_to_post'}
+          />
+          <Aide>
+            Le chemin complet, tel qu il apparait dans la barre d adresse de l Explorateur Windows.
+            Pour l obtenir sans faute de frappe : ouvre le dossier, clique dans la barre d adresse,
+            copie, colle ici. Il doit exister sur le PC ou tourne le watcher.
+          </Aide>
+        </label>
       </div>
 
-      <div>
-        <span className="label">
-          {parChemin ? 'Marques alimentees par ce dossier' : 'Marque du dossier'}
-        </span>
+      {/* 2. Ce qu'on y trouve */}
+      <div className="space-y-4 border-t border-ink-800 pt-5">
+        <p className="text-xs font-semibold uppercase tracking-wider text-mist-500">
+          2. Comment lire ce qu il contient
+        </p>
 
-        {parChemin ? (
-          <>
+        <div>
+          <div className="space-y-2">
+            {(
+              [
+                {
+                  v: 'champs' as const,
+                  titre: 'Le nom du fichier dit tout',
+                  exemple: 'mon-sujet_en.mp4',
+                },
+                {
+                  v: 'chemin' as const,
+                  titre: 'Le dossier est range par date',
+                  exemple: 'JJMMAAAA/1_matin/video.mp4',
+                },
+              ]
+            ).map((o) => (
+              <label
+                key={o.v}
+                className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2.5 transition-colors ${
+                  valeur.mode_nommage === o.v
+                    ? 'border-brand-500/50 bg-brand-500/10'
+                    : 'border-ink-700'
+                }`}
+              >
+                <input
+                  type="radio"
+                  className="mt-1"
+                  checked={valeur.mode_nommage === o.v}
+                  onChange={() =>
+                    set(
+                      o.v === 'chemin'
+                        ? { mode_nommage: o.v, recursif: true, deplacer: false }
+                        : { mode_nommage: o.v },
+                    )
+                  }
+                />
+                <span>
+                  <span className="block text-sm text-mist-100">{o.titre}</span>
+                  <span className="block font-mono text-xs text-mist-600">{o.exemple}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          <Aide titre="Lequel choisir">
+            <p>
+              <span className="text-mist-100">Le nom du fichier dit tout</span> : tu jettes des
+              videos dans le dossier en les nommant toi-meme. Elles sont rangees dans un
+              sous-dossier « traite » une fois prises.
+            </p>
+            <p className="mt-2">
+              <span className="text-mist-100">Range par date</span> : le dossier est deja organise
+              par un autre outil, comme TradeReels. Rien n est renomme, rien n est deplace.
+            </p>
+          </Aide>
+        </div>
+
+        {parChemin && (
+          <label className="block">
+            <span className="label">De quoi parlent ces videos</span>
+            <input
+              className="field"
+              value={valeur.modele_sujet}
+              onChange={(e) => set({ modele_sujet: e.target.value })}
+              placeholder="Seance de trading en accelere sur MT5, {creneau} du {date}"
+            />
+            <Aide>
+              <p>
+                Le chemin ne donne qu une date et un moment. C est cette phrase qui dit de quoi
+                parlent les videos, et c est elle que le modele recevra pour ecrire les textes.
+              </p>
+              <p className="mt-2">
+                <span className="font-mono">{'{date}'}</span> devient « 7 septembre 2026 »,{' '}
+                <span className="font-mono">{'{creneau}'}</span> devient « du matin », « de
+                l apres-midi » ou « du soir ».
+              </p>
+              <p className="mt-2">
+                Tu peux corriger le sujet video par video dans la Reserve, si l une merite mieux.
+              </p>
+            </Aide>
+          </label>
+        )}
+
+        {parChemin && (
+          <PointDeDepart
+            journees={journees}
+            vuA={inventaireVuA}
+            valeur={valeur.depuis_date}
+            onChange={(v) => set({ depuis_date: v })}
+          />
+        )}
+      </div>
+
+      {/* 3. Ou ca part */}
+      <div className="space-y-4 border-t border-ink-800 pt-5">
+        <p className="text-xs font-semibold uppercase tracking-wider text-mist-500">
+          3. Vers quelles marques
+        </p>
+
+        {!parChemin && (
+          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-ink-700 px-3 py-2 text-sm text-mist-300">
+            <input
+              type="checkbox"
+              checked={valeur.marqueDansLeNom}
+              onChange={(e) => set({ marqueDansLeNom: e.target.checked })}
+            />
+            La marque est ecrite dans le nom de chaque fichier
+          </label>
+        )}
+
+        {valeur.marqueDansLeNom && !parChemin ? (
+          <Aide titre="Ce que ca change">
+            Chaque fichier decide de sa marque, comme{' '}
+            <span className="font-mono">EdgeSyncFX_mon-sujet_en.mp4</span>. A n employer que si tu
+            melanges plusieurs marques dans un meme dossier.
+          </Aide>
+        ) : (
+          <div>
             <div className="flex flex-wrap gap-2">
               {marques.map((m) => {
                 const on = valeur.marques.includes(m)
@@ -710,7 +796,7 @@ function FormulaireDossier({
                           : [...valeur.marques, m],
                       })
                     }
-                    className={`rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
+                    className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
                       on
                         ? 'border-brand-500/50 bg-brand-500/10 text-mist-100'
                         : 'border-ink-700 text-mist-500 hover:text-mist-100'
@@ -722,116 +808,72 @@ function FormulaireDossier({
                 )
               })}
             </div>
-            <Aide>
-              Chaque video entre une fois PAR MARQUE cochee, dans sa propre file d attente. Une
-              meme video part donc sur les trois avec trois textes differents, sans jamais compter
-              deux fois. Si tu ajoutes une quatrieme marque dans six mois, elle rattrapera tout
-              l historique toute seule.
-            </Aide>
-          </>
-        ) : (
-          <>
-            <select
-              className="field"
-              value={valeur.marque}
-              onChange={(e) => set({ marque: e.target.value })}
-            >
-              <option value="">Lire la marque dans le nom du fichier</option>
-              {marques.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-            <Aide>
-              Une marque imposee ici dispense de l ecrire dans chaque nom de fichier : tu peux
-              alors nommer tes videos <span className="font-mono">mon-sujet_en.mp4</span>.
-            </Aide>
-          </>
-        )}
-      </div>
 
-      {parChemin && (
+            <p className="mt-2 text-xs text-mist-500">
+              {valeur.marques.length === 0
+                ? 'Coche au moins une marque.'
+                : `Chaque video partira sur ${valeur.marques.length} marque${
+                    valeur.marques.length > 1 ? 's' : ''
+                  }, avec un texte different pour chacune.`}
+            </p>
+
+            <Aide>
+              Une video entre une fois PAR MARQUE cochee, dans sa propre file d attente. Elle part
+              donc sur toutes avec des textes differents, sans jamais compter deux fois. Si tu
+              ajoutes une marque dans six mois, elle rattrapera l historique toute seule.
+            </Aide>
+          </div>
+        )}
+
         <label className="block">
-          <span className="label">Modele de sujet</span>
-          <input
+          <span className="label">Sur quels comptes</span>
+          <select
             className="field"
-            value={valeur.modele_sujet}
-            onChange={(e) => set({ modele_sujet: e.target.value })}
-            placeholder="Seance de trading en accelere sur MT5, {creneau} du {date}"
-          />
+            value={valeur.profil}
+            onChange={(e) => set({ profil: e.target.value })}
+          >
+            {profils.map((p) => (
+              <option key={p.nom} value={p.nom}>
+                {p.nom}
+              </option>
+            ))}
+          </select>
           <Aide>
-            <p>
-              Le chemin ne donne qu une date et un moment. C est ce modele qui dit de quoi parlent
-              les videos, et c est lui que le modele de langage recevra pour ecrire les textes.
-            </p>
-            <p className="mt-2">
-              <span className="font-mono">{'{date}'}</span> devient « 7 septembre 2026 »,{' '}
-              <span className="font-mono">{'{creneau}'}</span> devient « du matin », « de
-              l apres-midi » ou « du soir ».
-            </p>
-            <p className="mt-2">
-              Tu peux corriger le sujet video par video dans la Reserve, si l une merite mieux.
-            </p>
+            A l interieur de chaque marque, quels comptes sont vises. Les profils se creent dans
+            l onglet Ciblage : « tous les comptes », « seulement les reseaux courts », « test sur un
+            seul compte ».
           </Aide>
         </label>
-      )}
+      </div>
 
-      {parChemin && (
-        <PointDeDepart
-          journees={journees}
-          vuA={inventaireVuA}
-          valeur={valeur.depuis_date}
-          onChange={(v) => set({ depuis_date: v })}
-        />
-      )}
+      {/* 4. Options */}
+      <div className="space-y-2 border-t border-ink-800 pt-5">
+        <p className="text-xs font-semibold uppercase tracking-wider text-mist-500">
+          4. Options du ramassage
+        </p>
 
-      <label className="block">
-        <span className="label">Profil de ciblage</span>
-        <select
-          className="field"
-          value={valeur.profil}
-          onChange={(e) => set({ profil: e.target.value })}
-        >
-          {profils.map((p) => (
-            <option key={p.nom} value={p.nom}>
-              {p.nom}
-            </option>
-          ))}
-        </select>
-        <Aide>
-          Quels comptes sont vises par les videos de ce dossier. Les profils se creent dans
-          l onglet Ciblage : tu peux en avoir un « tous les comptes », un « seulement les reseaux
-          courts », un « test sur un seul compte ».
-        </Aide>
-      </label>
+        <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-ink-700 px-3 py-2 text-sm text-mist-300">
+          <input
+            type="checkbox"
+            checked={valeur.recursif}
+            onChange={(e) => set({ recursif: e.target.checked })}
+          />
+          Parcourir les sous-dossiers
+        </label>
 
-      <div>
-        <span className="label">Options du ramassage</span>
-        <div className="space-y-2">
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-ink-700 px-3 py-2 text-sm text-mist-300">
-            <input
-              type="checkbox"
-              checked={valeur.recursif}
-              onChange={(e) => set({ recursif: e.target.checked })}
-            />
-            Parcourir les sous-dossiers
-          </label>
-
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-ink-700 px-3 py-2 text-sm text-mist-300">
-            <input
-              type="checkbox"
-              checked={valeur.deplacer}
-              onChange={(e) => set({ deplacer: e.target.checked })}
-            />
-            Ranger les videos traitees dans « traite »
-          </label>
-        </div>
+        <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-ink-700 px-3 py-2 text-sm text-mist-300">
+          <input
+            type="checkbox"
+            checked={valeur.deplacer}
+            onChange={(e) => set({ deplacer: e.target.checked })}
+          />
+          Ranger les videos traitees dans « traite »
+        </label>
 
         <Aide>
           <p>
             <span className="text-mist-100">Parcourir les sous-dossiers</span> : sans cela, seules
-            les videos posees a la racine sont vues. Indispensable pour une arborescence par date.
+            les videos posees a la racine sont vues.
           </p>
           <p className="mt-2">
             <span className="text-mist-100">Ranger dans « traite »</span> : a decocher pour une
@@ -839,7 +881,7 @@ function FormulaireDossier({
             de ce qu il a vu, il ne relira pas deux fois.
           </p>
           <p className="mt-2 text-mist-600">
-            Ces deux cases se reglent toutes seules quand tu choisis « Dans l arborescence ».
+            Ces deux cases se reglent toutes seules quand tu choisis « range par date ».
           </p>
         </Aide>
       </div>
@@ -872,9 +914,11 @@ function Dossiers({
   function brouillon(d: Dossier): ReglagesDossier {
     return (
       brouillons[d.id] ?? {
+        nom: d.nom ?? '',
         chemin: d.chemin,
         marque: d.marque ?? '',
         marques: d.marques ?? [],
+        marqueDansLeNom: d.mode_nommage !== 'chemin' && (d.marques ?? []).length === 0,
         profil: d.profil ?? '',
         recursif: d.recursif ?? false,
         deplacer: d.deplacer ?? true,
@@ -886,10 +930,14 @@ function Dossiers({
   }
 
   function versBase(v: ReglagesDossier) {
+    // Une source distribue vers des marques. Le cas « la marque est dans le
+    // nom du fichier » est l'exception, pas la regle.
+    const parLeNom = v.mode_nommage !== 'chemin' && v.marqueDansLeNom
     return {
+      nom: v.nom.trim() || null,
       chemin: v.chemin.trim(),
-      marque: v.mode_nommage === 'chemin' ? null : v.marque || null,
-      marques: v.mode_nommage === 'chemin' ? v.marques : null,
+      marque: null,
+      marques: parLeNom ? null : v.marques,
       profil: v.profil || null,
       recursif: v.recursif,
       deplacer: v.deplacer,
@@ -901,15 +949,16 @@ function Dossiers({
 
   const incomplet =
     !nouveau.chemin.trim() ||
-    (nouveau.mode_nommage === 'chemin' && nouveau.marques.length === 0)
+    (!nouveau.marqueDansLeNom && nouveau.marques.length === 0)
 
   return (
     <div className="space-y-5">
       <section className="panel p-5">
-        <h2 className="mb-1 font-semibold">Ajouter un dossier</h2>
-        <p className="mb-4 text-sm text-mist-500">
-          Les videos deposees sont ajoutees a la Reserve. Rien n est programme a ce stade : c est
-          toi qui ordonnes la file.
+        <h2 className="mb-1 font-semibold">Ajouter une source</h2>
+        <p className="mb-5 text-sm text-mist-500">
+          Un dossier surveille sur ton PC, dont le contenu part vers une ou plusieurs marques. Les
+          videos trouvees entrent dans la Reserve : rien n est programme a ce stade, c est toi qui
+          ordonnes la file.
         </p>
 
         <FormulaireDossier
@@ -928,21 +977,19 @@ function Dossiers({
               setNouveau(dossierVide(profils[0]?.nom ?? ''))
             }}
           >
-            {incomplet && nouveau.mode_nommage === 'chemin' && nouveau.chemin.trim()
-              ? 'Coche au moins une marque'
-              : 'Ajouter'}
+            {incomplet && nouveau.chemin.trim() ? 'Coche au moins une marque' : 'Ajouter'}
           </button>
         </div>
       </section>
 
       <section className="panel p-5">
         <h2 className="mb-4 font-semibold">
-          {dossiers.length} dossier{dossiers.length > 1 ? 's' : ''} surveille
+          {dossiers.length} source{dossiers.length > 1 ? 's' : ''} surveillee
           {dossiers.length > 1 ? 's' : ''}
         </h2>
 
         {dossiers.length === 0 ? (
-          <EmptyState icon="▤" title="Aucun dossier surveille" hint="Ajoute-en un ci-dessus." />
+          <EmptyState icon="▤" title="Aucune source surveillee" hint="Ajoute-en une ci-dessus." />
         ) : (
           <ul className="space-y-3">
             {dossiers.map((d) => {
@@ -957,18 +1004,20 @@ function Dossiers({
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-mono text-xs text-mist-100" title={d.chemin}>
+                      <p className="truncate text-sm font-medium text-mist-100">
+                        {d.nom || d.chemin.split(/[\\/]/).pop()}
+                        <span className="ml-2 text-xs font-normal text-mist-500">
+                          vers {(d.marques ?? []).join(', ') || 'la marque lue dans le nom'}
+                        </span>
+                      </p>
+                      <p className="mt-0.5 truncate font-mono text-xs text-mist-600" title={d.chemin}>
                         {d.chemin}
                       </p>
                       <p className="mt-1 text-xs text-mist-600">
-                        {d.mode_nommage === 'chemin'
-                          ? `Arborescence · ${(d.marques ?? []).join(', ') || 'aucune marque'}`
-                          : d.marque
-                            ? `Nom de fichier · marque imposee : ${d.marque}`
-                            : 'Nom de fichier · marque lue dans le nom'}
+                        {d.mode_nommage === 'chemin' ? 'Range par date' : 'Nom de fichier'}
                         {d.profil && ` · ${d.profil}`}
                         {d.recursif && ' · sous-dossiers'}
-                        {d.deplacer === false && ' · fichiers laisses en place'}
+                        {d.deplacer === false && ' · laisses en place'}
                         {d.depuis_date && ` · a partir du ${dateLisible(d.depuis_date)}`}
                       </p>
                     </div>
