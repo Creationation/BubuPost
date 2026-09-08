@@ -122,6 +122,67 @@ async function appeler(local, corps) {
 // ---------------------------------------------------------------------------
 
 /**
+ * La date portee par un nom de dossier JJMMAAAA, au format AAAA-MM-JJ.
+ *
+ * Ce format-la se compare comme du texte, ce que JJMMAAAA ne permet pas :
+ * « 01072026 » est inferieur a « 26062026 » alors que le 1er juillet suit le
+ * 26 juin.
+ */
+function dateDuDossier(nom) {
+  const m = nom.match(/^(\d{2})(\d{2})(\d{4})$/)
+  if (!m) return null
+  const [, j, mo, a] = m
+  if (Number(j) < 1 || Number(j) > 31 || Number(mo) < 1 || Number(mo) > 12) return null
+  return `${a}-${mo}-${j}`
+}
+
+/** La date lue dans la premiere partie datee d'un chemin relatif. */
+function dateDuChemin(relatif) {
+  for (const partie of relatif.split(/[\\/]+/)) {
+    const d = dateDuDossier(partie)
+    if (d) return d
+  }
+  return null
+}
+
+/**
+ * Ce que contient un dossier surveille, journee par journee.
+ *
+ * L'application ne voit pas ce disque. Sans cet inventaire, choisir le point
+ * de depart voudrait dire taper une date de tete en esperant qu'un dossier lui
+ * corresponde. On le lui envoie donc a chaque passage.
+ */
+function inventorier(racine, extensions, sousDossierTraite) {
+  const parJour = new Map()
+
+  let entrees
+  try {
+    entrees = fs.readdirSync(racine, { withFileTypes: true })
+  } catch {
+    return []
+  }
+
+  for (const e of entrees) {
+    if (!e.isDirectory() || e.name === sousDossierTraite) continue
+    const date = dateDuDossier(e.name)
+    if (!date) continue
+
+    let videos = 0
+    ;(function compter(d, profondeur) {
+      if (profondeur > 3) return
+      for (const x of fs.readdirSync(d, { withFileTypes: true })) {
+        if (x.isDirectory()) compter(path.join(d, x.name), profondeur + 1)
+        else if (extensions.some((ext) => x.name.toLowerCase().endsWith(ext))) videos++
+      }
+    })(path.join(racine, e.name), 0)
+
+    parJour.set(e.name, { dossier: e.name, date, videos })
+  }
+
+  return [...parJour.values()].sort((a, b) => a.date.localeCompare(b.date))
+}
+
+/**
  * Un fichier est pret quand sa taille ne bouge plus.
  *
  * Sans cela, une video encore en cours de copie depuis une carte SD ou un
@@ -250,13 +311,11 @@ function typeVideo(nom) {
 const echecs = new Map()
 
 async function passage(local) {
+  // Premier appel : on demande la configuration sans inventaire, puisqu'on ne
+  // sait pas encore quels dossiers surveiller.
   let reglages
   try {
-    reglages = await appeler(local, {
-      action: 'config',
-      version: VERSION,
-      dossiers: 0,
-    })
+    reglages = await appeler(local, { action: 'config', version: VERSION, dossiers: 0 })
   } catch (e) {
     souci(`L'application ne repond pas : ${e.message}`)
     return
@@ -275,6 +334,27 @@ async function passage(local) {
 
   const extensions = reglages.extensions ?? ['.mp4', '.mov', '.m4v']
 
+  // On renvoie aussitot ce qu'on voit sur le disque, pour que l'ecran puisse
+  // proposer les vraies journees au moment de choisir le point de depart.
+  const inventaires = {}
+  for (const dossier of dossiers) {
+    if (!fs.existsSync(dossier.chemin)) continue
+    inventaires[dossier.id] = inventorier(dossier.chemin, extensions, local.sousDossierTraite)
+  }
+  if (Object.keys(inventaires).length > 0) {
+    try {
+      await appeler(local, {
+        action: 'config',
+        version: VERSION,
+        dossiers: dossiers.length,
+        inventaires,
+      })
+    } catch {
+      // L'inventaire est un confort pour l'ecran de reglages. S'il ne part
+      // pas, le ramassage doit continuer quand meme.
+    }
+  }
+
   for (const dossier of dossiers) {
     if (!fs.existsSync(dossier.chemin)) {
       souci(`Dossier introuvable sur ce PC : ${dossier.chemin}`)
@@ -289,9 +369,31 @@ async function passage(local) {
     )
     if (fichiers.length === 0) continue
 
-    info(`${fichiers.length} fichier(s) dans ${dossier.chemin}`)
+    // Le tri chronologique se fait ici, pas au retour : la file doit suivre
+    // l'ordre du tournage, et l'ordre du disque est alphabetique.
+    const ordonnes = fichiers
+      .map((f) => ({ f, date: dateDuChemin(f) }))
+      .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '') || a.f.localeCompare(b.f))
 
-    for (const fichier of fichiers) {
+    // Ce qui precede le point de depart est considere comme deja publie. On
+    // l'ecarte AVANT l'envoi : uploader soixante videos pour se les faire
+    // refuser ensuite serait du temps et de la bande passante perdus.
+    const depuis = dossier.depuis_date || null
+    const retenus = depuis
+      ? ordonnes.filter((x) => !x.date || x.date >= depuis)
+      : ordonnes
+    const ecartes = ordonnes.length - retenus.length
+
+    if (ecartes > 0) {
+      info(
+        `${ecartes} fichier(s) anterieurs au ${depuis} ignores, consideres comme deja publies.`,
+      )
+    }
+    if (retenus.length === 0) continue
+
+    info(`${retenus.length} fichier(s) a traiter dans ${dossier.chemin}`)
+
+    for (const { f: fichier } of retenus) {
       const complet = path.join(dossier.chemin, fichier)
 
       if (!(await estStable(complet))) {
@@ -317,7 +419,14 @@ async function passage(local) {
           profil: dossier.profil || undefined,
           mode_nommage: dossier.mode_nommage || undefined,
           modele_sujet: dossier.modele_sujet || undefined,
+          depuis_date: dossier.depuis_date || undefined,
         })
+
+        if (resultat.ignore) {
+          info(`${fichier} : ignore, ${resultat.error}`)
+          echecs.delete(fichier)
+          continue
+        }
 
         if (resultat.rejete) {
           // Le fichier RESTE en place : c'est un reglage ou un nom a corriger,

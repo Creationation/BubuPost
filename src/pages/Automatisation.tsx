@@ -24,16 +24,19 @@ import { PLATFORMS, PLATFORM_LABEL, type Account, type PostWithAccount } from '.
 import {
   CHAMPS_NOM,
   configVide,
+  dateLisible,
   exempleNom,
   exemplesNom,
   JOURS_CADENCE,
+  journeesVues,
   normaliserConfig,
   silenceDepuis,
   type ConfigAuto,
   type Dossier,
   type Import,
+  type Journee,
 } from '../lib/automatisation'
-import { formatDateTime } from '../lib/format'
+import { formatDateTime, relative } from '../lib/format'
 import { Alert, ConfirmModal, EmptyState, Loading, PageHeader } from '../components/ui'
 
 type Onglet = 'suivi' | 'dossiers' | 'nommage' | 'ciblage' | 'cadence' | 'validation' | 'contenu'
@@ -477,6 +480,7 @@ type ReglagesDossier = {
   deplacer: boolean
   mode_nommage: 'champs' | 'chemin'
   modele_sujet: string
+  depuis_date: string
 }
 
 function dossierVide(profilParDefaut: string): ReglagesDossier {
@@ -489,7 +493,96 @@ function dossierVide(profilParDefaut: string): ReglagesDossier {
     deplacer: true,
     mode_nommage: 'champs',
     modele_sujet: '',
+    depuis_date: '',
   }
+}
+
+/**
+ * Choisir a partir de quelle journee reprendre.
+ *
+ * Les journees viennent du disque, rapportees par le watcher : choisir dans
+ * une vraie liste vaut mieux que taper une date de tete en esperant qu'un
+ * dossier lui corresponde. Tant que le watcher n'est pas passe, on retombe sur
+ * une simple saisie de date, qui marche aussi.
+ */
+function PointDeDepart({
+  journees,
+  vuA,
+  valeur,
+  onChange,
+}: {
+  journees: Journee[]
+  vuA: string | null
+  valeur: string
+  onChange: (v: string) => void
+}) {
+  const avant = journees.filter((j) => valeur && j.date < valeur)
+  const apres = journees.filter((j) => !valeur || j.date >= valeur)
+  const videosAvant = avant.reduce((n, j) => n + j.videos, 0)
+  const videosApres = apres.reduce((n, j) => n + j.videos, 0)
+
+  return (
+    <div>
+      <span className="label">Commencer a partir de</span>
+
+      {journees.length > 0 ? (
+        <>
+          <select
+            className="field"
+            value={valeur}
+            onChange={(e) => onChange(e.target.value)}
+          >
+            <option value="">Tout traiter, depuis la plus ancienne</option>
+            {journees.map((j) => (
+              <option key={j.dossier} value={j.date}>
+                {j.dossier} · {dateLisible(j.date)} · {j.videos} video
+                {j.videos > 1 ? 's' : ''}
+              </option>
+            ))}
+          </select>
+
+          <p className="mt-2 text-xs text-mist-600">
+            {valeur ? (
+              <>
+                Les <span className="text-mist-300">{videosAvant}</span> video
+                {videosAvant > 1 ? 's' : ''} des {avant.length} journee
+                {avant.length > 1 ? 's' : ''} anterieures sont considerees comme deja publiees et
+                ne seront jamais reprises. Les{' '}
+                <span className="text-ok-400">{videosApres}</span> restantes entrent en reserve,
+                dans l ordre du temps.
+              </>
+            ) : (
+              <>
+                Les <span className="text-mist-300">{videosApres}</span> videos du dossier entrent
+                en reserve, la plus ancienne en premier. Choisis une journee si une partie a deja
+                ete publiee a la main.
+              </>
+            )}
+          </p>
+
+          {vuA && (
+            <p className="mt-1 text-xs text-mist-600">
+              Liste relevee sur ton disque {relative(vuA)}.
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <input
+            type="date"
+            className="field"
+            value={valeur}
+            onChange={(e) => onChange(e.target.value)}
+          />
+          <p className="mt-1 text-xs text-mist-600">
+            Le watcher n a pas encore rapporte le contenu de ce dossier. Enregistre-le, laisse
+            passer une minute, et la liste des journees reelles apparaitra ici. En attendant, une
+            date fonctionne aussi : la journee choisie est traitee, celles d avant sont ignorees.
+          </p>
+        </>
+      )}
+    </div>
+  )
 }
 
 /**
@@ -509,11 +602,15 @@ function FormulaireDossier({
   onChange,
   profils,
   marques,
+  journees = [],
+  inventaireVuA = null,
 }: {
   valeur: ReglagesDossier
   onChange: (v: ReglagesDossier) => void
   profils: ConfigAuto['profils']
   marques: string[]
+  journees?: Journee[]
+  inventaireVuA?: string | null
 }) {
   const set = (c: Partial<ReglagesDossier>) => onChange({ ...valeur, ...c })
   const parChemin = valeur.mode_nommage === 'chemin'
@@ -657,6 +754,15 @@ function FormulaireDossier({
         </label>
       )}
 
+      {parChemin && (
+        <PointDeDepart
+          journees={journees}
+          vuA={inventaireVuA}
+          valeur={valeur.depuis_date}
+          onChange={(v) => set({ depuis_date: v })}
+        />
+      )}
+
       <label className="block">
         <span className="label">Profil de ciblage</span>
         <select
@@ -743,6 +849,7 @@ function Dossiers({
         deplacer: d.deplacer ?? true,
         mode_nommage: (d.mode_nommage as 'champs' | 'chemin') ?? 'champs',
         modele_sujet: d.modele_sujet ?? '',
+        depuis_date: d.depuis_date ?? '',
       }
     )
   }
@@ -757,6 +864,7 @@ function Dossiers({
       deplacer: v.deplacer,
       mode_nommage: v.mode_nommage,
       modele_sujet: v.modele_sujet.trim() || null,
+      depuis_date: v.depuis_date || null,
     }
   }
 
@@ -830,6 +938,7 @@ function Dossiers({
                         {d.profil && ` · ${d.profil}`}
                         {d.recursif && ' · sous-dossiers'}
                         {d.deplacer === false && ' · fichiers laisses en place'}
+                        {d.depuis_date && ` · a partir du ${dateLisible(d.depuis_date)}`}
                       </p>
                     </div>
 
@@ -862,6 +971,8 @@ function Dossiers({
                         onChange={(suite) => setBrouillons({ ...brouillons, [d.id]: suite })}
                         profils={profils}
                         marques={marques}
+                        journees={journeesVues(d.inventaire)}
+                        inventaireVuA={d.inventaire_vu_a}
                       />
                       <div className="mt-4 flex items-center justify-end gap-2">
                         <span className="mr-auto text-xs text-mist-600">

@@ -13,6 +13,38 @@ export type Dossier = Tables<'watch_folders'>
 export type Import = Tables<'imports'>
 export type Video = Tables<'bibliotheque'>
 
+/** Une journee vue sur le disque par le watcher. */
+export type Journee = { dossier: string; date: string; videos: number }
+
+/**
+ * Ce que le watcher a rapporte, remis en ordre.
+ *
+ * Le champ est du jsonb libre en base : on le ramene a une forme sure avant
+ * de s'en servir, plutot que de faire confiance a ce qui arrive du disque.
+ */
+export function journeesVues(inventaire: unknown): Journee[] {
+  if (!Array.isArray(inventaire)) return []
+  return inventaire
+    .filter((j) => j && typeof j === 'object')
+    .map((j) => ({
+      dossier: String((j as Journee).dossier ?? ''),
+      date: String((j as Journee).date ?? ''),
+      videos: Number((j as Journee).videos ?? 0),
+    }))
+    .filter((j) => j.date)
+    .sort((a, b) => a.date.localeCompare(b.date))
+}
+
+/** « 7 septembre 2026 », depuis une date AAAA-MM-JJ. */
+export function dateLisible(iso: string): string {
+  const [a, m, j] = iso.split('-')
+  const mois = [
+    'janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin',
+    'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre',
+  ]
+  return `${Number(j)} ${mois[Number(m) - 1] ?? m} ${a}`
+}
+
 export type Profil = {
   nom: string
   plateformes: string[]

@@ -684,6 +684,11 @@ export type DossierInput = {
   mode_nommage?: 'champs' | 'chemin'
   /** Modele de sujet, avec {date} et {creneau}. Mode chemin uniquement. */
   modele_sujet?: string | null
+  /**
+   * Premiere journee a traiter, incluse, au format AAAA-MM-JJ.
+   * Ce qui precede est considere comme deja publie.
+   */
+  depuis_date?: string | null
 }
 
 export async function creerDossier(input: DossierInput): Promise<Dossier> {

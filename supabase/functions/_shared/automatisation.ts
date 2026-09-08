@@ -155,6 +155,20 @@ export function lireChemin(cheminRelatif: string): LectureChemin {
 }
 
 /**
+ * Ce chemin precede-t-il le point de depart ?
+ *
+ * Inclusif : la journee designee est traitee, celles d'avant sont ignorees.
+ * Un chemin sans date lisible n'est jamais ignore : mieux vaut le voir arriver
+ * et le refuser franchement que le faire disparaitre en silence.
+ */
+export function avantLeDepart(cheminRelatif: string, depuis: string | null): boolean {
+  if (!depuis) return false
+  const lu = lireChemin(cheminRelatif)
+  if (!lu.date) return false
+  return lu.date < depuis
+}
+
+/**
  * Le rang d'une video dont le chemin porte une date.
  *
  * Sans lui, la file suivrait l'ordre de ramassage du disque, qui est

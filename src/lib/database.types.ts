@@ -412,7 +412,10 @@ export type Database = {
           chemin: string
           created_at: string
           deplacer: boolean
+          depuis_date: string | null
           id: string
+          inventaire: Json | null
+          inventaire_vu_a: string | null
           marque: string | null
           marques: string[] | null
           mode_nommage: string
@@ -426,7 +429,10 @@ export type Database = {
           chemin: string
           created_at?: string
           deplacer?: boolean
+          depuis_date?: string | null
           id?: string
+          inventaire?: Json | null
+          inventaire_vu_a?: string | null
           marque?: string | null
           marques?: string[] | null
           mode_nommage?: string
@@ -440,7 +446,10 @@ export type Database = {
           chemin?: string
           created_at?: string
           deplacer?: boolean
+          depuis_date?: string | null
           id?: string
+          inventaire?: Json | null
+          inventaire_vu_a?: string | null
           marque?: string | null
           marques?: string[] | null
           mode_nommage?: string

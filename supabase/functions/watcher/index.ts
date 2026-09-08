@@ -27,6 +27,7 @@ import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders, json } from '../_shared/cors.ts'
 import { jwtRole, memeSecret } from '../_shared/auth.ts'
 import {
+  avantLeDepart,
   lireChemin,
   lireNom,
   marqueCanonique,
@@ -48,7 +49,9 @@ async function lireConfig(db: SupabaseClient): Promise<Config> {
 async function lireDossiers(db: SupabaseClient) {
   const { data } = await db
     .from('watch_folders')
-    .select('id, chemin, actif, marque, marques, profil, recursif, deplacer, mode_nommage, modele_sujet')
+    .select(
+      'id, chemin, actif, marque, marques, profil, recursif, deplacer, mode_nommage, modele_sujet, depuis_date',
+    )
     .order('ordre')
   return data ?? []
 }
@@ -67,6 +70,8 @@ type CorpsIngestion = {
   /** Plusieurs marques : une entree de bibliotheque sera creee pour chacune. */
   marques?: string[]
   profil?: string
+  /** Point de depart du dossier, au format AAAA-MM-JJ. */
+  depuis_date?: string | null
   /**
    * Chemin du fichier relatif au dossier surveille, separateurs compris.
    * C'est lui qui porte l'information en mode « chemin », et c'est aussi
@@ -86,6 +91,17 @@ async function ingerer(db: SupabaseClient, body: CorpsIngestion) {
 
   const mode = body.mode_nommage ?? 'champs'
   const sourceCle = body.chemin_relatif || body.fichier
+
+  // Second garde-fou. Le watcher filtre deja avant d'envoyer quoi que ce soit,
+  // ce qui evite d'uploader pour rien ; celui-ci protege d'un dossier
+  // reconfigure entre le ramassage et l'envoi.
+  if (avantLeDepart(sourceCle, body.depuis_date ?? null)) {
+    return json({
+      ok: false,
+      ignore: true,
+      error: `anterieur au point de depart (${body.depuis_date})`,
+    })
+  }
 
   let marquesDemandees: string[] = []
   let sujet = ''
@@ -357,6 +373,18 @@ Deno.serve(async (req) => {
     switch (action) {
       case 'config': {
         await signeDeVie(db, body)
+
+        // Le watcher rapporte ce qu'il voit sur le disque : l'application ne
+        // peut pas le savoir autrement, et c'est ce qui permet de choisir un
+        // point de depart dans une vraie liste au lieu de taper une date.
+        const inventaires = (body.inventaires ?? {}) as Record<string, unknown>
+        for (const [id, contenu] of Object.entries(inventaires)) {
+          await db
+            .from('watch_folders')
+            .update({ inventaire: contenu, inventaire_vu_a: new Date().toISOString() })
+            .eq('id', id)
+        }
+
         const config = await lireConfig(db)
         const dossiers = await lireDossiers(db)
         return json({
