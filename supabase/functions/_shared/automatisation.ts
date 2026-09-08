@@ -78,6 +78,115 @@ export type Lecture = {
   manquants: string[]
 }
 
+/** Les creneaux reconnus dans un nom de sous-dossier, et leur libelle. */
+const CRENEAUX: Record<string, string> = {
+  matin: 'du matin',
+  apres_midi: "de l'apres-midi",
+  midi: 'du midi',
+  soir: 'du soir',
+  nuit: 'de la nuit',
+}
+
+const MOIS = [
+  'janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin',
+  'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre',
+]
+
+export type LectureChemin = {
+  date: string | null
+  /** Cle brute du creneau : matin, apres_midi, soir... */
+  creneau: string | null
+  /** Rang du creneau dans la journee, tire du prefixe numerique. */
+  rang: number
+  dateLisible: string
+  creneauLisible: string
+}
+
+/**
+ * Ce qu'on tire d'un chemin du type DDMMYYYY/N_creneau/fichier.mp4
+ *
+ * C'est la forme produite par TradeReels : un dossier par jour, trois
+ * sous-dossiers par moment de la journee, et un nom de fichier qui ne fait que
+ * repeter les deux. L'information est donc dans le chemin, pas dans le nom.
+ *
+ * Le prefixe numerique du creneau (1_, 2_, 3_) donne l'ordre de la journee,
+ * ce qui evite de le deviner a partir du libelle.
+ */
+export function lireChemin(cheminRelatif: string): LectureChemin {
+  const parties = cheminRelatif.split(/[\\/]+/).filter(Boolean)
+
+  let date: string | null = null
+  let creneau: string | null = null
+  let rang = 0
+
+  for (const partie of parties) {
+    // DDMMYYYY, huit chiffres. On refuse une date impossible plutot que de la
+    // corriger en silence : un dossier mal nomme doit se voir.
+    const jour = partie.match(/^(\d{2})(\d{2})(\d{4})$/)
+    if (jour && !date) {
+      const [, d, m, a] = jour
+      const nd = Number(d)
+      const nm = Number(m)
+      if (nd >= 1 && nd <= 31 && nm >= 1 && nm <= 12) date = `${a}-${m}-${d}`
+      continue
+    }
+
+    const moment = partie.match(/^(\d+)[_-](.+)$/)
+    if (moment && !creneau) {
+      rang = Number(moment[1])
+      creneau = moment[2].toLowerCase()
+    }
+  }
+
+  const dateLisible = date
+    ? (() => {
+        const [a, m, d] = date.split('-')
+        return `${Number(d)} ${MOIS[Number(m) - 1]} ${a}`
+      })()
+    : ''
+
+  return {
+    date,
+    creneau,
+    rang,
+    dateLisible,
+    creneauLisible: creneau ? (CRENEAUX[creneau] ?? creneau.replace(/_/g, ' ')) : '',
+  }
+}
+
+/**
+ * Le rang d'une video dont le chemin porte une date.
+ *
+ * Sans lui, la file suivrait l'ordre de ramassage du disque, qui est
+ * alphabetique : JJMMAAAA place « 01072026 » (1er juillet) avant « 26062026 »
+ * (26 juin). On publierait donc juillet avant juin, ce qui n'a aucun sens sur
+ * un rattrapage d'archive.
+ *
+ * Le rang vaut le jour depuis 1970, multiplie par dix pour laisser la place
+ * aux creneaux de la journee. Il est donc chronologique par construction,
+ * quel que soit l'ordre dans lequel les fichiers sont vus.
+ */
+export function rangChronologique(lu: LectureChemin): number | null {
+  if (!lu.date) return null
+  const jours = Math.floor(new Date(`${lu.date}T00:00:00Z`).getTime() / 86_400_000)
+  return jours * 10 + (lu.rang || 0)
+}
+
+/**
+ * Le sujet, a partir d'un modele et de ce que le chemin a livre.
+ *
+ * Le modele appartient au dossier surveille : c'est lui qui sait de quoi
+ * parlent ses videos. Le chemin ne fournit qu'une date et un moment.
+ */
+export function sujetDepuisChemin(modele: string, lu: LectureChemin): string {
+  return (modele || 'Seance du {date}, {creneau}')
+    .replace(/\{date\}/g, lu.dateLisible || 'ce jour')
+    .replace(/\{creneau\}/g, lu.creneauLisible || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+,/g, ',')
+    .trim()
+}
+
 /**
  * Ramene une marque lue dans un nom de fichier a sa forme exacte.
  *

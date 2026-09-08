@@ -140,18 +140,50 @@ async function estStable(chemin) {
 
 const pause = (ms) => new Promise((r) => setTimeout(r, ms))
 
-function videosDe(dossier, extensions) {
-  try {
-    return fs
-      .readdirSync(dossier, { withFileTypes: true })
-      .filter((e) => e.isFile())
-      .map((e) => e.name)
-      .filter((nom) => extensions.some((ext) => nom.toLowerCase().endsWith(ext)))
-      .sort()
-  } catch (e) {
-    souci(`Dossier illisible : ${dossier} (${e.message})`)
-    return []
+/**
+ * Les videos d'un dossier, en profondeur si demande.
+ *
+ * Renvoie le chemin RELATIF a la racine surveillee. C'est lui qui identifie la
+ * video : deux fichiers de meme nom dans deux dossiers de dates differentes
+ * sont deux videos distinctes, et le chemin porte aussi l'information quand le
+ * nom du fichier n'en porte pas.
+ *
+ * Le sous-dossier des fichiers ranges est ignore : sans cela, une video
+ * traitee serait relue au passage suivant.
+ */
+function videosDe(racine, extensions, recursif, sousDossierTraite) {
+  const trouvees = []
+
+  function parcourir(dossier, prefixe, profondeur) {
+    let entrees
+    try {
+      entrees = fs.readdirSync(dossier, { withFileTypes: true })
+    } catch (e) {
+      souci(`Dossier illisible : ${dossier} (${e.message})`)
+      return
+    }
+
+    for (const e of entrees) {
+      const relatif = prefixe ? `${prefixe}/${e.name}` : e.name
+
+      if (e.isDirectory()) {
+        if (!recursif) continue
+        if (e.name === sousDossierTraite) continue
+        // Garde-fou : une arborescence profonde ou un lien circulaire ne doit
+        // pas faire tourner le watcher indefiniment.
+        if (profondeur >= 5) continue
+        parcourir(path.join(dossier, e.name), relatif, profondeur + 1)
+        continue
+      }
+
+      if (e.isFile() && extensions.some((ext) => e.name.toLowerCase().endsWith(ext))) {
+        trouvees.push(relatif)
+      }
+    }
   }
+
+  parcourir(racine, '', 0)
+  return trouvees.sort()
 }
 
 /**
@@ -160,17 +192,18 @@ function videosDe(dossier, extensions) {
  * En cas de collision de nom, on suffixe plutot que d'ecraser : deux videos
  * differentes portant le meme nom arrivent plus souvent qu'on ne croit.
  */
-function ranger(dossier, fichier, sousDossier) {
-  const destination = path.join(dossier, sousDossier)
+function ranger(racine, relatif, sousDossier) {
+  const destination = path.join(racine, sousDossier)
   if (!fs.existsSync(destination)) fs.mkdirSync(destination, { recursive: true })
 
-  let cible = path.join(destination, fichier)
+  const nom = path.basename(relatif)
+  let cible = path.join(destination, nom)
   if (fs.existsSync(cible)) {
-    const base = path.parse(fichier)
+    const base = path.parse(nom)
     cible = path.join(destination, `${base.name}-${Date.now()}${base.ext}`)
   }
 
-  fs.renameSync(path.join(dossier, fichier), cible)
+  fs.renameSync(path.join(racine, relatif), cible)
   return cible
 }
 
@@ -248,7 +281,12 @@ async function passage(local) {
       continue
     }
 
-    const fichiers = videosDe(dossier.chemin, extensions)
+    const fichiers = videosDe(
+      dossier.chemin,
+      extensions,
+      dossier.recursif === true,
+      local.sousDossierTraite,
+    )
     if (fichiers.length === 0) continue
 
     info(`${fichiers.length} fichier(s) dans ${dossier.chemin}`)
@@ -269,12 +307,16 @@ async function passage(local) {
 
         const resultat = await appeler(local, {
           action: 'ingest',
-          fichier,
+          fichier: path.basename(fichier),
+          chemin_relatif: fichier,
           dossier: dossier.chemin,
           taille,
           video_url: videoUrl,
           marque: dossier.marque || undefined,
+          marques: dossier.marques?.length ? dossier.marques : undefined,
           profil: dossier.profil || undefined,
+          mode_nommage: dossier.mode_nommage || undefined,
+          modele_sujet: dossier.modele_sujet || undefined,
         })
 
         if (resultat.rejete) {
@@ -286,15 +328,24 @@ async function passage(local) {
           continue
         }
 
-        bien(
-          `${fichier} : ajoute a la bibliotheque de ${resultat.marque}, sujet « ${resultat.sujet} ».`,
-        )
-        info(
-          `   ${resultat.en_reserve} video(s) en reserve pour cette marque. Le moteur de cadence les programmera.`,
-        )
+        const creees = resultat.marques_creees ?? []
+        if (creees.length > 0) {
+          bien(`${fichier} : ajoute pour ${creees.join(', ')}, sujet « ${resultat.sujet} ».`)
+        } else {
+          info(`${fichier} : deja en bibliotheque, rien a faire.`)
+        }
+        for (const a of resultat.avertissements ?? []) info(`   ${a}`)
+        info(`   ${resultat.en_reserve} video(s) en reserve au total.`)
 
-        const range = ranger(dossier.chemin, fichier, local.sousDossierTraite)
-        info(`   range dans ${range}`)
+        // Certains dossiers ne doivent pas etre remues : une archive rangee
+        // par date appartient au pipeline qui l'a produite. On se souvient a
+        // la place, et le chemin relatif suffit a ne pas la relire deux fois.
+        if (dossier.deplacer === false) {
+          info('   fichier laisse en place, ce dossier n est pas remue.')
+        } else {
+          const range = ranger(dossier.chemin, fichier, local.sousDossierTraite)
+          info(`   range dans ${range}`)
+        }
         echecs.delete(fichier)
       } catch (e) {
         const n = (echecs.get(fichier) ?? 0) + 1

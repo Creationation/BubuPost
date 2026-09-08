@@ -110,6 +110,7 @@ export type Database = {
           profil: string | null
           programmee_pour: string | null
           rang: number
+          source_cle: string | null
           statut: string
           sujet: string
           taille: number | null
@@ -127,6 +128,7 @@ export type Database = {
           profil?: string | null
           programmee_pour?: string | null
           rang?: number
+          source_cle?: string | null
           statut?: string
           sujet: string
           taille?: number | null
@@ -144,6 +146,7 @@ export type Database = {
           profil?: string | null
           programmee_pour?: string | null
           rang?: number
+          source_cle?: string | null
           statut?: string
           sujet?: string
           taille?: number | null
@@ -408,28 +411,43 @@ export type Database = {
           actif: boolean
           chemin: string
           created_at: string
+          deplacer: boolean
           id: string
           marque: string | null
+          marques: string[] | null
+          mode_nommage: string
+          modele_sujet: string | null
           ordre: number
           profil: string | null
+          recursif: boolean
         }
         Insert: {
           actif?: boolean
           chemin: string
           created_at?: string
+          deplacer?: boolean
           id?: string
           marque?: string | null
+          marques?: string[] | null
+          mode_nommage?: string
+          modele_sujet?: string | null
           ordre?: number
           profil?: string | null
+          recursif?: boolean
         }
         Update: {
           actif?: boolean
           chemin?: string
           created_at?: string
+          deplacer?: boolean
           id?: string
           marque?: string | null
+          marques?: string[] | null
+          mode_nommage?: string
+          modele_sujet?: string | null
           ordre?: number
           profil?: string | null
+          recursif?: boolean
         }
         Relationships: []
       }
@@ -468,6 +486,21 @@ export type Database = {
           published_24h: number | null
           status: string | null
           token_expiry: string | null
+        }
+        Relationships: []
+      }
+      sources_etat: {
+        Row: {
+          fichier: string | null
+          marques: string[] | null
+          marques_en_file: number | null
+          marques_en_pause: number | null
+          marques_ingerees: number | null
+          marques_programmees: number | null
+          publications_parties: number | null
+          source_cle: string | null
+          statuts: string[] | null
+          vue_le: string | null
         }
         Relationships: []
       }

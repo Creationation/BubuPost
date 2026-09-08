@@ -13,6 +13,7 @@ import {
   rejeterCampagne,
   rejouerImport,
   supprimerDossier,
+  type DossierInput,
   testerNom,
   validerCampagne,
   type LectureNom,
@@ -237,7 +238,12 @@ export default function Automatisation() {
               profils={config.profils}
               marques={marques}
               busy={busy}
-              onCreer={(d) => void agir(async () => void (await creerDossier(d)), 'Dossier ajoute')}
+              onCreer={(d) =>
+                void agir(
+                  async () => void (await creerDossier(d as unknown as DossierInput)),
+                  'Dossier ajoute',
+                )
+              }
               onMaj={(id, d) => void agir(() => majDossier(id, d), 'Dossier mis a jour')}
               onSupprimer={(id) => void agir(() => supprimerDossier(id), 'Dossier retire')}
             />
@@ -462,6 +468,248 @@ function Suivi({
 // Dossiers
 // ---------------------------------------------------------------------------
 
+type ReglagesDossier = {
+  chemin: string
+  marque: string
+  marques: string[]
+  profil: string
+  recursif: boolean
+  deplacer: boolean
+  mode_nommage: 'champs' | 'chemin'
+  modele_sujet: string
+}
+
+function dossierVide(profilParDefaut: string): ReglagesDossier {
+  return {
+    chemin: '',
+    marque: '',
+    marques: [],
+    profil: profilParDefaut,
+    recursif: false,
+    deplacer: true,
+    mode_nommage: 'champs',
+    modele_sujet: '',
+  }
+}
+
+/**
+ * Les reglages d'un dossier surveille.
+ *
+ * Deux familles de dossiers, et elles ne se ressemblent pas.
+ *
+ * Un dossier « boite de depot » : on y jette des videos nommees selon la
+ * regle, elles sont traitees puis rangees. C'est le mode champs.
+ *
+ * Un dossier deja organise, produit par un autre outil : l'arborescence porte
+ * l'information, on ne renomme rien et surtout on ne deplace rien. C'est le
+ * mode chemin.
+ */
+function FormulaireDossier({
+  valeur,
+  onChange,
+  profils,
+  marques,
+}: {
+  valeur: ReglagesDossier
+  onChange: (v: ReglagesDossier) => void
+  profils: ConfigAuto['profils']
+  marques: string[]
+}) {
+  const set = (c: Partial<ReglagesDossier>) => onChange({ ...valeur, ...c })
+  const parChemin = valeur.mode_nommage === 'chemin'
+
+  return (
+    <div className="space-y-4">
+      <label className="block">
+        <span className="label">Chemin du dossier</span>
+        <input
+          className="field font-mono text-xs"
+          value={valeur.chemin}
+          onChange={(e) => set({ chemin: e.target.value })}
+          placeholder="C:\\TradeReels\\ready_to_post"
+        />
+        <span className="mt-1 block text-xs text-mist-600">
+          Le chemin doit exister sur le PC ou tourne le watcher.
+        </span>
+      </label>
+
+      <div>
+        <span className="label">Ou l information se trouve</span>
+        <div className="space-y-2">
+          {(
+            [
+              {
+                v: 'champs' as const,
+                label: 'Dans le nom du fichier',
+                aide: 'EdgeSyncFX_mon-sujet_en.mp4. Les videos sont rangees dans « traite » apres coup.',
+              },
+              {
+                v: 'chemin' as const,
+                label: 'Dans l arborescence',
+                aide: 'JJMMAAAA/1_matin/video.mp4. Pour un dossier deja organise par un autre outil, qu il ne faut pas remuer.',
+              },
+            ]
+          ).map((o) => (
+            <label
+              key={o.v}
+              className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                valeur.mode_nommage === o.v
+                  ? 'border-brand-500/50 bg-brand-500/10'
+                  : 'border-ink-700'
+              }`}
+            >
+              <input
+                type="radio"
+                className="mt-1"
+                checked={valeur.mode_nommage === o.v}
+                onChange={() =>
+                  set(
+                    o.v === 'chemin'
+                      ? { mode_nommage: o.v, recursif: true, deplacer: false }
+                      : { mode_nommage: o.v },
+                  )
+                }
+              />
+              <span>
+                <span className="block text-mist-100">{o.label}</span>
+                <span className="block text-xs text-mist-600">{o.aide}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <span className="label">
+          {parChemin ? 'Marques alimentees par ce dossier' : 'Marque du dossier'}
+        </span>
+        {parChemin ? (
+          <>
+            <div className="flex flex-wrap gap-2">
+              {marques.map((m) => {
+                const on = valeur.marques.includes(m)
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() =>
+                      set({
+                        marques: on
+                          ? valeur.marques.filter((x) => x !== m)
+                          : [...valeur.marques, m],
+                      })
+                    }
+                    className={`rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
+                      on
+                        ? 'border-brand-500/50 bg-brand-500/10 text-mist-100'
+                        : 'border-ink-700 text-mist-500 hover:text-mist-100'
+                    }`}
+                  >
+                    {on ? '✓ ' : ''}
+                    {m}
+                  </button>
+                )
+              })}
+            </div>
+            <span className="mt-1.5 block text-xs text-mist-600">
+              Chaque video entre une fois PAR MARQUE cochee, dans sa propre file. Une meme video
+              peut donc partir sur les trois avec trois textes differents, sans jamais compter deux
+              fois.
+            </span>
+          </>
+        ) : (
+          <>
+            <select
+              className="field"
+              value={valeur.marque}
+              onChange={(e) => set({ marque: e.target.value })}
+            >
+              <option value="">Lire la marque dans le nom du fichier</option>
+              {marques.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs text-mist-600">
+              Une marque imposee ici dispense de l ecrire dans chaque nom de fichier.
+            </span>
+          </>
+        )}
+      </div>
+
+      {parChemin && (
+        <label className="block">
+          <span className="label">Modele de sujet</span>
+          <input
+            className="field"
+            value={valeur.modele_sujet}
+            onChange={(e) => set({ modele_sujet: e.target.value })}
+            placeholder="Seance de trading en accelere sur MT5, {creneau} du {date}"
+          />
+          <span className="mt-1 block text-xs text-mist-600">
+            Le chemin ne donne qu une date et un moment : c est ce modele qui dit de quoi parlent
+            les videos. <span className="font-mono">{'{date}'}</span> et{' '}
+            <span className="font-mono">{'{creneau}'}</span> sont remplaces. Tu peux corriger le
+            sujet video par video dans la Reserve.
+          </span>
+        </label>
+      )}
+
+      <label className="block">
+        <span className="label">Profil de ciblage</span>
+        <select
+          className="field"
+          value={valeur.profil}
+          onChange={(e) => set({ profil: e.target.value })}
+        >
+          {profils.map((p) => (
+            <option key={p.nom} value={p.nom}>
+              {p.nom}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="space-y-2">
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-ink-700 px-3 py-2">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={valeur.recursif}
+            onChange={(e) => set({ recursif: e.target.checked })}
+          />
+          <span>
+            <span className="block text-sm text-mist-100">Parcourir les sous-dossiers</span>
+            <span className="block text-xs text-mist-600">
+              Sans cela, seules les videos posees a la racine sont vues.
+            </span>
+          </span>
+        </label>
+
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-ink-700 px-3 py-2">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={valeur.deplacer}
+            onChange={(e) => set({ deplacer: e.target.checked })}
+          />
+          <span>
+            <span className="block text-sm text-mist-100">
+              Ranger les videos traitees dans « traite »
+            </span>
+            <span className="block text-xs text-mist-600">
+              A decocher pour une archive produite par un autre outil : la deranger casserait son
+              organisation. Le watcher se souvient de ce qu il a vu, il ne relira pas deux fois.
+            </span>
+          </span>
+        </label>
+      </div>
+    </div>
+  )
+}
+
 function Dossiers({
   dossiers,
   profils,
@@ -475,91 +723,76 @@ function Dossiers({
   profils: ConfigAuto['profils']
   marques: string[]
   busy: boolean
-  onCreer: (d: {
-    chemin: string
-    actif: boolean
-    marque: string | null
-    profil: string | null
-    ordre: number
-  }) => void
+  onCreer: (d: Record<string, unknown>) => void
   onMaj: (id: string, d: Record<string, unknown>) => void
   onSupprimer: (id: string) => void
 }) {
-  const [chemin, setChemin] = useState('')
-  const [marque, setMarque] = useState('')
-  const [profil, setProfil] = useState(profils[0]?.nom ?? '')
+  const [nouveau, setNouveau] = useState<ReglagesDossier>(() => dossierVide(profils[0]?.nom ?? ''))
+  const [ouvert, setOuvert] = useState<string | null>(null)
+  const [brouillons, setBrouillons] = useState<Record<string, ReglagesDossier>>({})
   const [aSupprimer, setASupprimer] = useState<Dossier | null>(null)
+
+  function brouillon(d: Dossier): ReglagesDossier {
+    return (
+      brouillons[d.id] ?? {
+        chemin: d.chemin,
+        marque: d.marque ?? '',
+        marques: d.marques ?? [],
+        profil: d.profil ?? '',
+        recursif: d.recursif ?? false,
+        deplacer: d.deplacer ?? true,
+        mode_nommage: (d.mode_nommage as 'champs' | 'chemin') ?? 'champs',
+        modele_sujet: d.modele_sujet ?? '',
+      }
+    )
+  }
+
+  function versBase(v: ReglagesDossier) {
+    return {
+      chemin: v.chemin.trim(),
+      marque: v.mode_nommage === 'chemin' ? null : v.marque || null,
+      marques: v.mode_nommage === 'chemin' ? v.marques : null,
+      profil: v.profil || null,
+      recursif: v.recursif,
+      deplacer: v.deplacer,
+      mode_nommage: v.mode_nommage,
+      modele_sujet: v.modele_sujet.trim() || null,
+    }
+  }
+
+  const incomplet =
+    !nouveau.chemin.trim() ||
+    (nouveau.mode_nommage === 'chemin' && nouveau.marques.length === 0)
 
   return (
     <div className="space-y-5">
       <section className="panel p-5">
         <h2 className="mb-1 font-semibold">Ajouter un dossier</h2>
         <p className="mb-4 text-sm text-mist-500">
-          Le chemin doit exister sur le PC ou tourne le watcher. Les videos deposees a la racine
-          sont traitees, puis rangees dans un sous-dossier « traite ».
+          Les videos deposees sont ajoutees a la Reserve. Rien n est programme a ce stade : c est
+          toi qui ordonnes la file.
         </p>
 
-        <div className="space-y-3">
-          <label className="block">
-            <span className="label">Chemin du dossier</span>
-            <input
-              className="field font-mono text-xs"
-              value={chemin}
-              onChange={(e) => setChemin(e.target.value)}
-              placeholder="C:\Users\latitude\Videos\BubuPost\EdgeSyncFX"
-            />
-          </label>
+        <FormulaireDossier
+          valeur={nouveau}
+          onChange={setNouveau}
+          profils={profils}
+          marques={marques}
+        />
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="label">Marque du dossier</span>
-              <select
-                className="field"
-                value={marque}
-                onChange={(e) => setMarque(e.target.value)}
-              >
-                <option value="">Lire la marque dans le nom du fichier</option>
-                {marques.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-              <span className="mt-1 block text-xs text-mist-600">
-                Une marque imposee ici dispense de l ecrire dans chaque nom de fichier.
-              </span>
-            </label>
-
-            <label className="block">
-              <span className="label">Profil de ciblage</span>
-              <select className="field" value={profil} onChange={(e) => setProfil(e.target.value)}>
-                {profils.map((p) => (
-                  <option key={p.nom} value={p.nom}>
-                    {p.nom}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <div className="flex justify-end">
-            <button
-              className="btn btn-primary"
-              disabled={busy || !chemin.trim()}
-              onClick={() => {
-                onCreer({
-                  chemin: chemin.trim(),
-                  actif: true,
-                  marque: marque || null,
-                  profil: profil || null,
-                  ordre: dossiers.length,
-                })
-                setChemin('')
-              }}
-            >
-              Ajouter
-            </button>
-          </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            className="btn btn-primary"
+            disabled={busy || incomplet}
+            onClick={() => {
+              onCreer({ ...versBase(nouveau), actif: true, ordre: dossiers.length })
+              setNouveau(dossierVide(profils[0]?.nom ?? ''))
+            }}
+          >
+            {incomplet && nouveau.mode_nommage === 'chemin' && nouveau.chemin.trim()
+              ? 'Coche au moins une marque'
+              : 'Ajouter'}
+          </button>
         </div>
       </section>
 
@@ -573,41 +806,83 @@ function Dossiers({
           <EmptyState icon="▤" title="Aucun dossier surveille" hint="Ajoute-en un ci-dessus." />
         ) : (
           <ul className="space-y-3">
-            {dossiers.map((d) => (
-              <li
-                key={d.id}
-                className={`rounded-xl border p-3 ${
-                  d.actif ? 'border-ink-700' : 'border-ink-800 opacity-60'
-                }`}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-mono text-xs text-mist-100" title={d.chemin}>
-                      {d.chemin}
-                    </p>
-                    <p className="mt-1 text-xs text-mist-600">
-                      {d.marque ? `Marque imposee : ${d.marque}` : 'Marque lue dans le nom'}
-                      {d.profil && ` · ${d.profil}`}
-                    </p>
+            {dossiers.map((d) => {
+              const ouvertIci = ouvert === d.id
+              const v = brouillon(d)
+              return (
+                <li
+                  key={d.id}
+                  className={`rounded-xl border p-3 ${
+                    d.actif ? 'border-ink-700' : 'border-ink-800 opacity-60'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-mono text-xs text-mist-100" title={d.chemin}>
+                        {d.chemin}
+                      </p>
+                      <p className="mt-1 text-xs text-mist-600">
+                        {d.mode_nommage === 'chemin'
+                          ? `Arborescence · ${(d.marques ?? []).join(', ') || 'aucune marque'}`
+                          : d.marque
+                            ? `Nom de fichier · marque imposee : ${d.marque}`
+                            : 'Nom de fichier · marque lue dans le nom'}
+                        {d.profil && ` · ${d.profil}`}
+                        {d.recursif && ' · sous-dossiers'}
+                        {d.deplacer === false && ' · fichiers laisses en place'}
+                      </p>
+                    </div>
+
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        className="btn btn-ghost !py-1 !text-xs"
+                        onClick={() => setOuvert(ouvertIci ? null : d.id)}
+                      >
+                        {ouvertIci ? 'Fermer' : 'Modifier'}
+                      </button>
+                      <button
+                        className="btn btn-ghost !py-1 !text-xs"
+                        onClick={() => onMaj(d.id, { actif: !d.actif })}
+                      >
+                        {d.actif ? 'Desactiver' : 'Activer'}
+                      </button>
+                      <button
+                        className="btn btn-danger !py-1 !text-xs"
+                        onClick={() => setASupprimer(d)}
+                      >
+                        Retirer
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="flex shrink-0 gap-2">
-                    <button
-                      className="btn btn-ghost !py-1 !text-xs"
-                      onClick={() => onMaj(d.id, { actif: !d.actif })}
-                    >
-                      {d.actif ? 'Desactiver' : 'Activer'}
-                    </button>
-                    <button
-                      className="btn btn-danger !py-1 !text-xs"
-                      onClick={() => setASupprimer(d)}
-                    >
-                      Retirer
-                    </button>
-                  </div>
-                </div>
-              </li>
-            ))}
+                  {ouvertIci && (
+                    <div className="mt-4 border-t border-ink-800 pt-4">
+                      <FormulaireDossier
+                        valeur={v}
+                        onChange={(suite) => setBrouillons({ ...brouillons, [d.id]: suite })}
+                        profils={profils}
+                        marques={marques}
+                      />
+                      <div className="mt-4 flex items-center justify-end gap-2">
+                        <span className="mr-auto text-xs text-mist-600">
+                          Tes modifications ne sont enregistrees qu avec ce bouton.
+                        </span>
+                        <button
+                          className="btn btn-primary !py-1 !text-xs"
+                          disabled={busy}
+                          onClick={() => {
+                            onMaj(d.id, versBase(v))
+                            setOuvert(null)
+                          }}
+                        >
+                          Enregistrer
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         )}
       </section>
@@ -615,7 +890,7 @@ function Dossiers({
       <ConfirmModal
         open={aSupprimer !== null}
         title="Retirer ce dossier"
-        message="Le dossier n est plus surveille. Rien n est supprime sur ton disque, et les campagnes deja creees ne bougent pas."
+        message="Le dossier n est plus surveille. Rien n est supprime sur ton disque, et les videos deja en Reserve ne bougent pas."
         confirmLabel="Retirer"
         danger
         onConfirm={() => {

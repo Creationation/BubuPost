@@ -670,9 +670,20 @@ export async function listerDossiers(): Promise<Dossier[]> {
 export type DossierInput = {
   chemin: string
   actif: boolean
+  /** Marque unique. Laisser vide quand le dossier en alimente plusieurs. */
   marque: string | null
+  /** Plusieurs marques : chaque video entre une fois par marque. */
+  marques?: string[] | null
   profil: string | null
   ordre: number
+  /** Parcourir les sous-dossiers. */
+  recursif?: boolean
+  /** Ranger les fichiers traites. Faux pour une archive qu'il ne faut pas remuer. */
+  deplacer?: boolean
+  /** 'champs' lit le nom du fichier, 'chemin' lit l'arborescence. */
+  mode_nommage?: 'champs' | 'chemin'
+  /** Modele de sujet, avec {date} et {creneau}. Mode chemin uniquement. */
+  modele_sujet?: string | null
 }
 
 export async function creerDossier(input: DossierInput): Promise<Dossier> {
@@ -709,6 +720,45 @@ export async function listerImports(limite = 40): Promise<Import[]> {
 export async function rejouerImport(id: string): Promise<void> {
   const { error } = await supabase.from('imports').delete().eq('id', id)
   if (error) throw new Error(errorMessage(error))
+}
+
+/**
+ * Ce qu'on sait d'un fichier source : quelles marques l'ont deja pris.
+ *
+ * C'est la vue qui repond a « ou j'en suis » sur un dossier de 77 videos, et
+ * a « est-ce que celle-la est deja partie quelque part ».
+ */
+export type Source = {
+  source_cle: string
+  fichier: string
+  vue_le: string
+  marques_ingerees: number
+  marques: string[]
+  statuts: string[]
+  marques_programmees: number
+  marques_en_file: number
+  marques_en_pause: number
+  publications_parties: number
+}
+
+export async function listerSources(): Promise<Source[]> {
+  // Postgres declare toutes les colonnes d'une vue comme nullables, ce qu'un
+  // group by rend faux en pratique : source_cle est la cle de regroupement.
+  const lignes = unwrap(
+    await supabase.from('sources_etat').select('*').order('source_cle', { ascending: false }),
+  )
+  return lignes.map((l) => ({
+    source_cle: l.source_cle ?? '',
+    fichier: l.fichier ?? '',
+    vue_le: l.vue_le ?? '',
+    marques_ingerees: Number(l.marques_ingerees ?? 0),
+    marques: l.marques ?? [],
+    statuts: l.statuts ?? [],
+    marques_programmees: Number(l.marques_programmees ?? 0),
+    marques_en_file: Number(l.marques_en_file ?? 0),
+    marques_en_pause: Number(l.marques_en_pause ?? 0),
+    publications_parties: Number(l.publications_parties ?? 0),
+  }))
 }
 
 export type SignesDeVie = { vu_a: string | null; version: string | null; dossiers: number | null }

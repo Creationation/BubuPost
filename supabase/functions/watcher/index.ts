@@ -26,7 +26,14 @@
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders, json } from '../_shared/cors.ts'
 import { jwtRole, memeSecret } from '../_shared/auth.ts'
-import { lireNom, marqueCanonique, type Config } from '../_shared/automatisation.ts'
+import {
+  lireChemin,
+  lireNom,
+  marqueCanonique,
+  rangChronologique,
+  sujetDepuisChemin,
+  type Config,
+} from '../_shared/automatisation.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -41,7 +48,7 @@ async function lireConfig(db: SupabaseClient): Promise<Config> {
 async function lireDossiers(db: SupabaseClient) {
   const { data } = await db
     .from('watch_folders')
-    .select('id, chemin, actif, marque, profil')
+    .select('id, chemin, actif, marque, marques, profil, recursif, deplacer, mode_nommage, modele_sujet')
     .order('ordre')
   return data ?? []
 }
@@ -57,7 +64,17 @@ type CorpsIngestion = {
   video_url: string
   /** Renseigne quand le dossier impose une marque. */
   marque?: string
+  /** Plusieurs marques : une entree de bibliotheque sera creee pour chacune. */
+  marques?: string[]
   profil?: string
+  /**
+   * Chemin du fichier relatif au dossier surveille, separateurs compris.
+   * C'est lui qui porte l'information en mode « chemin », et c'est aussi
+   * l'identite stable du fichier source.
+   */
+  chemin_relatif?: string
+  mode_nommage?: 'champs' | 'chemin'
+  modele_sujet?: string
 }
 
 async function ingerer(db: SupabaseClient, body: CorpsIngestion) {
@@ -67,71 +84,92 @@ async function ingerer(db: SupabaseClient, body: CorpsIngestion) {
     return json({ ok: false, error: "L'automatisation est suspendue dans l'application" }, 409)
   }
 
-  const lecture = lireNom(body.fichier, config.nommage)
+  const mode = body.mode_nommage ?? 'champs'
+  const sourceCle = body.chemin_relatif || body.fichier
 
-  // La marque du dossier l'emporte : c'est le reglage le plus explicite.
-  let marque = (body.marque ?? '').trim() || lecture.marque
-  let langue = lecture.langue
-  let sujet = lecture.sujet
+  let marquesDemandees: string[] = []
+  let sujet = ''
+  let langue = ''
+  // Rang impose par la date du chemin, quand il y en a une.
+  let rangImpose: number | null = null
 
-  const manquants = lecture.manquants.filter((m) => !(m === 'marque' && body.marque))
+  if (mode === 'chemin') {
+    // Le chemin informe, le nom du fichier ne dit rien. Les marques viennent
+    // donc forcement du dossier surveille.
+    const lu = lireChemin(sourceCle)
+    if (!lu.date) {
+      await journal(db, body, 'rejete', 'aucune date lisible dans le chemin, attendu JJMMAAAA', {})
+      return json({ ok: false, rejete: true, error: 'Aucune date lisible dans le chemin' })
+    }
+    sujet = sujetDepuisChemin(body.modele_sujet ?? '', lu)
+    // La file suit la chronologie du tournage, pas l'ordre du disque.
+    rangImpose = rangChronologique(lu)
+    langue = config.nommage.defauts.langue || 'en'
+    marquesDemandees = body.marques?.length
+      ? body.marques
+      : body.marque
+        ? [body.marque]
+        : []
 
-  if (manquants.length > 0) {
-    if (config.nommage.surNonConforme === 'rejeter') {
-      await journal(db, body, 'rejete', `nom non conforme, il manque : ${manquants.join(', ')}`, {
-        marque,
-        sujet,
-        langue,
-      })
+    if (marquesDemandees.length === 0) {
+      await journal(db, body, 'rejete', 'ce dossier ne declare aucune marque', { sujet, langue })
       return json({
         ok: false,
         rejete: true,
-        error: `Nom non conforme, il manque : ${manquants.join(', ')}`,
+        error: 'Ce dossier est en mode chemin mais ne declare aucune marque',
       })
     }
-    marque = marque || config.nommage.defauts.marque
-    langue = langue || config.nommage.defauts.langue
-    sujet = sujet || body.fichier.replace(/\.[^.]+$/, '').replace(/[-_+]/g, ' ')
+  } else {
+    const lecture = lireNom(body.fichier, config.nommage)
+    sujet = lecture.sujet
+    langue = lecture.langue
+
+    const marqueLue = (body.marque ?? '').trim() || lecture.marque
+    const manquants = lecture.manquants.filter((m) => !(m === 'marque' && body.marque))
+
+    if (manquants.length > 0) {
+      if (config.nommage.surNonConforme === 'rejeter') {
+        await journal(db, body, 'rejete', `nom non conforme, il manque : ${manquants.join(', ')}`, {
+          marque: marqueLue,
+          sujet,
+          langue,
+        })
+        return json({
+          ok: false,
+          rejete: true,
+          error: `Nom non conforme, il manque : ${manquants.join(', ')}`,
+        })
+      }
+      sujet = sujet || body.fichier.replace(/\.[^.]+$/, '').replace(/[-_+]/g, ' ')
+      langue = langue || config.nommage.defauts.langue || 'en'
+    }
+
+    marquesDemandees = body.marques?.length
+      ? body.marques
+      : marqueLue
+        ? [marqueLue]
+        : config.nommage.defauts.marque
+          ? [config.nommage.defauts.marque]
+          : []
   }
 
-  if (!marque) {
+  if (marquesDemandees.length === 0) {
     await journal(db, body, 'rejete', 'aucune marque, ni dans le nom ni en valeur par defaut', {})
     return json({ ok: false, rejete: true, error: 'Aucune marque determinee' })
   }
-
-  // La marque du fichier est ramenee a la forme exacte des comptes :
-  // « edgesyncfx » et « EdgeSyncFX » designent la meme chose.
-  const { data: toutesMarques } = await db.from('accounts').select('brand')
-  const connues = [...new Set((toutesMarques ?? []).map((a: { brand: string }) => a.brand))]
-  const canonique = marqueCanonique(marque, connues)
-
-  if (!canonique) {
-    await journal(
-      db,
-      body,
-      'rejete',
-      `marque « ${marque} » inconnue, les marques existantes sont : ${connues.join(', ')}`,
-      { marque, sujet, langue },
-    )
-    return json({
-      ok: false,
-      rejete: true,
-      error: `Marque inconnue : ${marque}. Connues : ${connues.join(', ')}`,
-    })
+  if (!sujet) {
+    await journal(db, body, 'rejete', 'aucun sujet lisible', { langue })
+    return json({ ok: false, rejete: true, error: 'Aucun sujet determine' })
   }
-  marque = canonique
 
   // La langue lue doit faire partie des langues reconnues, sinon on ne saura
   // pas dans quelle langue ecrire et le texte partirait au hasard.
   const reconnues = config.nommage.languesReconnues ?? ['fr', 'en']
   if (langue && !reconnues.includes(langue)) {
-    await journal(
-      db,
-      body,
-      'rejete',
-      `langue « ${langue} » non reconnue, attendu : ${reconnues.join(', ')}`,
-      { marque, sujet, langue },
-    )
+    await journal(db, body, 'rejete', `langue « ${langue} » non reconnue, attendu : ${reconnues.join(', ')}`, {
+      sujet,
+      langue,
+    })
     return json({
       ok: false,
       rejete: true,
@@ -139,63 +177,117 @@ async function ingerer(db: SupabaseClient, body: CorpsIngestion) {
     })
   }
   langue = langue || config.nommage.defauts.langue || 'en'
-  if (!sujet) {
-    await journal(db, body, 'rejete', 'aucun sujet lisible dans le nom', { marque })
-    return json({ ok: false, rejete: true, error: 'Aucun sujet determine' })
+
+  // Les marques sont ramenees a la forme exacte des comptes : « edgesyncfx »
+  // et « EdgeSyncFX » designent la meme chose.
+  const { data: toutesMarques } = await db.from('accounts').select('brand')
+  const connues = [...new Set((toutesMarques ?? []).map((a: { brand: string }) => a.brand))]
+
+  const retenues: string[] = []
+  const inconnues: string[] = []
+  for (const m of marquesDemandees) {
+    const canonique = marqueCanonique(m, connues)
+    if (canonique) {
+      if (!retenues.includes(canonique)) retenues.push(canonique)
+    } else {
+      inconnues.push(m)
+    }
   }
 
-  // Le rang place la video a la FIN de la file de sa marque. Diego la
-  // remontera s'il le souhaite : c'est son role, pas celui du watcher.
-  const { data: rang } = await db.rpc('rang_suivant', { p_marque: marque })
+  if (retenues.length === 0) {
+    await journal(
+      db,
+      body,
+      'rejete',
+      `marque(s) inconnue(s) : ${inconnues.join(', ')}. Existantes : ${connues.join(', ')}`,
+      { sujet, langue },
+    )
+    return json({
+      ok: false,
+      rejete: true,
+      error: `Marque inconnue : ${inconnues.join(', ')}. Connues : ${connues.join(', ')}`,
+    })
+  }
 
-  const { data: entree, error } = await db
-    .from('bibliotheque')
-    .insert({
+  // Une entree par marque. L'index unique (source_cle, marque) fait le reste :
+  // rejouer le dossier entier ne cree rien, et une marque ajoutee plus tard
+  // rattrape son retard toute seule.
+  const creees: string[] = []
+  const deja: string[] = []
+
+  for (const marque of retenues) {
+    const { data: existe } = await db
+      .from('bibliotheque')
+      .select('id')
+      .eq('source_cle', sourceCle)
+      .eq('marque', marque)
+      .maybeSingle()
+
+    if (existe) {
+      deja.push(marque)
+      continue
+    }
+
+    // En mode chemin, la date decide. Sinon on ajoute a la fin de la file.
+    let rang = rangImpose
+    if (rang === null) {
+      const { data: suivant } = await db.rpc('rang_suivant', { p_marque: marque })
+      rang = Number(suivant ?? 1000)
+    }
+
+    const { error } = await db.from('bibliotheque').insert({
       video_url: body.video_url,
       fichier: body.fichier,
+      source_cle: sourceCle,
       taille: body.taille ?? null,
       marque,
       sujet,
       langue: langue || null,
       profil: body.profil ?? null,
-      rang: Number(rang ?? 1000),
+      rang,
       statut: 'en_file',
     })
-    .select('id')
-    .single()
 
-  if (error) {
-    await journal(db, body, 'rejete', `ecriture impossible : ${error.message}`, {
-      marque,
-      sujet,
-      langue,
-    })
-    return json({ ok: false, error: error.message }, 500)
+    // Course entre deux passages : l'index unique a tranche, ce n'est pas une
+    // erreur mais la preuve que le verrou fonctionne.
+    if (error) {
+      if (error.code === '23505') deja.push(marque)
+      else {
+        await journal(db, body, 'rejete', `ecriture impossible : ${error.message}`, { sujet, langue })
+        return json({ ok: false, error: error.message }, 500)
+      }
+      continue
+    }
+
+    creees.push(marque)
   }
 
-  // Combien de videos attendent devant celle-ci, pour que le journal du
-  // watcher dise quelque chose d'utile.
-  const { count } = await db
-    .from('bibliotheque')
-    .select('id', { count: 'exact', head: true })
-    .eq('marque', marque)
-    .eq('statut', 'en_file')
+  const avertissements: string[] = []
+  if (deja.length > 0) avertissements.push(`deja en bibliotheque pour : ${deja.join(', ')}`)
+  if (inconnues.length > 0) avertissements.push(`marque(s) inconnue(s) ignoree(s) : ${inconnues.join(', ')}`)
 
-  await journal(db, body, 'importe', null, {
-    marque,
+  await journal(db, body, 'importe', avertissements.join(' ; ') || null, {
+    marque: retenues[0],
     sujet,
     langue,
     video_url: body.video_url,
     publications: 0,
   })
 
+  const { count } = await db
+    .from('bibliotheque')
+    .select('id', { count: 'exact', head: true })
+    .eq('statut', 'en_file')
+
   return json({
     ok: true,
-    bibliotheque_id: entree.id,
-    marque,
+    marques_creees: creees,
+    marques_deja_presentes: deja,
     sujet,
     langue,
+    source: sourceCle,
     en_reserve: count ?? 0,
+    avertissements,
   })
 }
 
@@ -208,7 +300,9 @@ async function journal(
 ) {
   await db.from('imports').upsert(
     {
-      cle: `${body.fichier}#${body.taille ?? 0}`,
+      // Le chemin relatif, pas seulement le nom : 07092026/1_matin/x.mp4 et
+      // 04092026/1_matin/x.mp4 sont deux videos differentes.
+      cle: `${body.chemin_relatif || body.fichier}#${body.taille ?? 0}`,
       fichier: body.fichier,
       dossier: body.dossier ?? null,
       taille: body.taille ?? null,

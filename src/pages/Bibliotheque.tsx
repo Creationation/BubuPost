@@ -5,12 +5,14 @@ import {
   lancerMoteur,
   listAccounts,
   listerBibliotheque,
+  listerSources,
   lireConfigAuto,
   majVideo,
   programmerVideo,
   supprimerVideo,
   type EtatReserve,
   type Prevision,
+  type Source,
 } from '../lib/api'
 import { friendlyError } from '../lib/errors'
 import { normaliserConfig, type ConfigAuto, type Video } from '../lib/automatisation'
@@ -32,6 +34,8 @@ export default function Bibliotheque() {
   const [notice, setNotice] = useState<string | null>(null)
 
   const [filtreMarque, setFiltreMarque] = useState('')
+  const [vue, setVue] = useState<'file' | 'sources'>('file')
+  const [sources, setSources] = useState<Source[]>([])
   const [enEdition, setEnEdition] = useState<Video | null>(null)
   const [aProgrammer, setAProgrammer] = useState<Video | null>(null)
   const [aSupprimer, setASupprimer] = useState<Video | null>(null)
@@ -44,12 +48,14 @@ export default function Bibliotheque() {
   const reload = useCallback(async () => {
     setLoading(true)
     try {
-      const [v, c, comptes] = await Promise.all([
+      const [v, c, comptes, src] = await Promise.all([
         listerBibliotheque(),
         lireConfigAuto(),
         listAccounts(),
+        listerSources(),
       ])
       setVideos(v)
+      setSources(src)
       setConfig(normaliserConfig(c))
       setMarques([...new Set(comptes.map((a) => a.brand))].filter(Boolean).sort())
       setError(null)
@@ -201,6 +207,26 @@ export default function Bibliotheque() {
       )}
 
       <div className="mb-5 flex flex-wrap items-center gap-3">
+        <div className="flex gap-1 rounded-xl border border-ink-700 bg-ink-850 p-1">
+          {(
+            [
+              { cle: 'file' as const, label: 'File d attente' },
+              { cle: 'sources' as const, label: 'Par fichier source' },
+            ]
+          ).map((o) => (
+            <button
+              key={o.cle}
+              onClick={() => setVue(o.cle)}
+              aria-pressed={vue === o.cle}
+              className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                vue === o.cle ? 'bg-brand-500 text-white' : 'text-mist-500 hover:text-mist-100'
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+
         <select
           className="field !w-auto"
           value={filtreMarque}
@@ -222,6 +248,8 @@ export default function Bibliotheque() {
 
       {loading ? (
         <Loading />
+      ) : vue === 'sources' ? (
+        <VueSources sources={sources} filtreMarque={filtreMarque} />
       ) : enFile.length === 0 ? (
         <EmptyState
           icon="▽"
@@ -415,6 +443,115 @@ export default function Bibliotheque() {
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * Ou j'en suis, fichier par fichier.
+ *
+ * La file repond a « qu est-ce qui part ensuite ». Cette vue-la repond a
+ * « est-ce que celle-la est deja passee, et sur quelles marques ». Sur un
+ * dossier de soixante-dix videos et trois marques, c'est la question qu'on se
+ * pose vraiment avant de produire la suivante.
+ */
+function VueSources({ sources, filtreMarque }: { sources: Source[]; filtreMarque: string }) {
+  const [recherche, setRecherche] = useState('')
+
+  const visibles = useMemo(() => {
+    const q = recherche.trim().toLowerCase()
+    return sources.filter((s) => {
+      if (filtreMarque && !s.marques.includes(filtreMarque)) return false
+      if (q && !s.source_cle.toLowerCase().includes(q)) return false
+      return true
+    })
+  }, [sources, filtreMarque, recherche])
+
+  const total = sources.length
+  const toutesParties = sources.filter(
+    (s) => s.marques_programmees === s.marques_ingerees && s.marques_ingerees > 0,
+  ).length
+
+  if (total === 0) {
+    return (
+      <EmptyState
+        icon="▤"
+        title="Aucun fichier source ingere"
+        hint="Les videos venant d un dossier surveille en mode arborescence apparaissent ici, avec l etat de chaque marque."
+      />
+    )
+  }
+
+  return (
+    <div>
+      <div className="panel mb-4 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-mist-300">
+            <span className="font-semibold text-mist-100">{total}</span> fichier
+            {total > 1 ? 's' : ''} vu{total > 1 ? 's' : ''},{' '}
+            <span className="font-semibold text-ok-400">{toutesParties}</span> entierement
+            programme{toutesParties > 1 ? 's' : ''} sur toutes leurs marques.
+          </p>
+          <input
+            className="field !w-auto font-mono text-xs"
+            value={recherche}
+            onChange={(e) => setRecherche(e.target.value)}
+            placeholder="chercher un chemin, une date..."
+          />
+        </div>
+      </div>
+
+      <ul className="space-y-2">
+        {visibles.map((s) => (
+          <li key={s.source_cle} className="panel p-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-mono text-xs text-mist-100" title={s.source_cle}>
+                  {s.source_cle}
+                </p>
+                <p className="mt-1 text-xs text-mist-600">
+                  vue le {formatDateTime(s.vue_le)}
+                  {s.publications_parties > 0 &&
+                    ` · ${s.publications_parties} publication(s) deja partie(s)`}
+                </p>
+              </div>
+
+              <div className="flex shrink-0 flex-wrap gap-1.5">
+                {s.marques.map((m, i) => {
+                  const statut = s.statuts[i]
+                  const teinte =
+                    statut === 'programmee'
+                      ? 'border-ok-400/30 bg-ok-400/10 text-ok-400'
+                      : statut === 'en_pause'
+                        ? 'border-mist-500/30 bg-mist-500/10 text-mist-500'
+                        : 'border-warn-400/30 bg-warn-400/10 text-warn-400'
+                  const libelle =
+                    statut === 'programmee'
+                      ? 'programmee'
+                      : statut === 'en_pause'
+                        ? 'en pause'
+                        : 'en file'
+                  return (
+                    <span
+                      key={m}
+                      className={`chip ${teinte}`}
+                      title={`${m} : ${libelle}`}
+                    >
+                      {m}
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      {visibles.length === 0 && (
+        <p className="py-8 text-center text-sm text-mist-500">
+          Rien ne correspond a cette recherche.
+        </p>
+      )}
+    </div>
+  )
+}
 
 /**
  * Corriger ce que le nom du fichier disait mal.
