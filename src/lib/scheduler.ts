@@ -77,19 +77,35 @@ function abonner(prevenir: () => void): () => void {
  * declencheraient deux rendus par rafraichissement, et il faudrait garder la
  * meme reference d'objet entre les appels pour ne pas boucler.
  */
-let instantane = { dernierPassage: null as number | null, intervalleMinutes: 5 }
+let instantane = {
+  dernierPassage: null as number | null,
+  intervalleMinutes: 5,
+  connu: false,
+}
 
 function lire() {
   if (
     instantane.dernierPassage !== dernierPassage ||
-    instantane.intervalleMinutes !== intervalleMinutes
+    instantane.intervalleMinutes !== intervalleMinutes ||
+    instantane.connu !== charge
   ) {
-    instantane = { dernierPassage, intervalleMinutes }
+    instantane = { dernierPassage, intervalleMinutes, connu: charge }
   }
   return instantane
 }
 
-export function useScheduler(): { dernierPassage: number | null; intervalleMinutes: number } {
+/**
+ * `connu` dit si la valeur vient du serveur ou du defaut du code.
+ *
+ * Sans lui, l'ecran affirmait « toutes les 5 minutes » avant d'avoir rien lu,
+ * alors que le cron tourne toutes les 2. Un chiffre faux affiche avec aplomb
+ * vaut moins qu'une phrase sans chiffre.
+ */
+export function useScheduler(): {
+  dernierPassage: number | null
+  intervalleMinutes: number
+  connu: boolean
+} {
   return useSyncExternalStore(abonner, lire, lire)
 }
 

@@ -47,7 +47,7 @@ export default function Dashboard() {
   const [dossiers, setDossiers] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const { intervalleMinutes } = useScheduler()
+  const { intervalleMinutes, connu: intervalleConnu } = useScheduler()
 
   useEffect(() => {
     // Les publications et les comptes d'abord : sans eux la page n'a rien a
@@ -145,7 +145,11 @@ export default function Dashboard() {
     <div>
       <PageHeader
         title="Dashboard"
-        subtitle={`Le scheduler tourne tout seul, toutes les ${intervalleMinutes} minutes`}
+        subtitle={
+          intervalleConnu
+            ? `Le scheduler tourne tout seul, toutes les ${intervalleMinutes} minutes`
+            : 'Le scheduler tourne tout seul'
+        }
         action={
           <Link to="/posts" className="btn btn-primary">
             Nouvelle publication
