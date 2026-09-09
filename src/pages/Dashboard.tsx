@@ -1,19 +1,25 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { listAccounts, listPosts } from '../lib/api'
-import { friendlyError } from '../lib/errors'
 import {
-  PLATFORM_ICON,
-  decrireToken,
-  type Account,
-  type PostWithAccount,
-} from '../lib/types'
+  apercuCadence,
+  dernierSigneDeVie,
+  listAccounts,
+  listerDossiers,
+  listPosts,
+  lireConfigAuto,
+  type EtatReserve,
+  type SignesDeVie,
+} from '../lib/api'
+import { friendlyError } from '../lib/errors'
+import { PLATFORM_ICON, type Account, type PostWithAccount } from '../lib/types'
 import { formatDateTime, formatDay, dayKey } from '../lib/format'
 import { Alert, EmptyState, Loading, PageHeader } from '../components/ui'
 import { BadgeStatut, LigneAttente, ProchainePublication } from '../components/Attente'
 import { useLiveStatuses } from '../lib/useLiveStatuses'
 import { useScheduler } from '../lib/scheduler'
 import { QuotaYoutube } from '../components/QuotaYoutube'
+import { ListeAttention, pointsDAttention } from '../components/Attention'
+import { normaliserConfig, type ConfigAuto } from '../lib/automatisation'
 
 function Stat({
   label,
@@ -35,11 +41,18 @@ function Stat({
 export default function Dashboard() {
   const [posts, setPosts] = useState<PostWithAccount[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
+  const [config, setConfig] = useState<ConfigAuto | null>(null)
+  const [reserve, setReserve] = useState<EtatReserve[]>([])
+  const [ping, setPing] = useState<SignesDeVie | null>(null)
+  const [dossiers, setDossiers] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { intervalleMinutes } = useScheduler()
 
   useEffect(() => {
+    // Les publications et les comptes d'abord : sans eux la page n'a rien a
+    // montrer. Le reste enrichit l'ecran et ne doit pas l'empecher de
+    // s'afficher s'il echoue.
     Promise.all([listPosts(), listAccounts()])
       .then(([p, a]) => {
         setPosts(p)
@@ -47,6 +60,26 @@ export default function Dashboard() {
       })
       .catch((err) => setError(friendlyError(err)))
       .finally(() => setLoading(false))
+
+    void (async () => {
+      try {
+        const [c, d, sv] = await Promise.all([
+          lireConfigAuto(),
+          listerDossiers(),
+          dernierSigneDeVie(),
+        ])
+        setConfig(normaliserConfig(c))
+        setDossiers(d.filter((x) => x.actif).length)
+        setPing(sv)
+      } catch {
+        // L'automatisation n'est peut-etre pas encore en place.
+      }
+      try {
+        setReserve((await apercuCadence()).reserve)
+      } catch {
+        // L'apercu appelle une fonction : son echec ne doit rien casser ici.
+      }
+    })()
   }, [])
 
   useLiveStatuses(posts, (maj) => {
@@ -74,21 +107,17 @@ export default function Dashboard() {
   }, [posts, accounts])
 
   /**
-   * Ce qui demande vraiment une action.
+   * Ce qui demande une action, tout de suite.
    *
-   * Un token qui se renouvelle tout seul n'a rien a faire ici : le signaler
-   * chaque jour apprend a ignorer les alertes, et le vrai probleme passerait
-   * alors inapercu.
+   * Compter ne dit pas quoi faire : neuf comptes actifs et zero en attente
+   * peut vouloir dire que tout va bien, ou que la chaine est arretee depuis
+   * trois jours. Cette liste-la tranche, et porte le lien qui traite chaque
+   * point.
    */
-  const alerts = useMemo(() => {
-    const out: { text: string; bad: boolean }[] = []
-    for (const a of accounts) {
-      const etat = decrireToken(a)
-      if (!etat || etat.ton === 'ok') continue
-      out.push({ text: `${a.account_name} : ${etat.texte.toLowerCase()}`, bad: etat.ton === 'bad' })
-    }
-    return out
-  }, [accounts])
+  const attention = useMemo(
+    () => pointsDAttention({ comptes: accounts, posts, config, reserve, ping, dossiers }),
+    [accounts, posts, config, reserve, ping, dossiers],
+  )
 
   const failed = useMemo(
     () => posts.filter((p) => p.status === 'failed').slice(0, 5),
@@ -130,6 +159,14 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/*
+        Ce qui demande une action passe avant tout le reste. Les compteurs
+        decrivent, cette liste-la agit.
+      */}
+      <div className="mb-6">
+        <ListeAttention points={attention} />
+      </div>
+
       <ProchainePublication posts={posts} />
 
       {/* Affiche seulement si une chaine YouTube existe : sinon c'est du bruit. */}
@@ -150,27 +187,6 @@ export default function Dashboard() {
         />
       </div>
 
-      {alerts.length > 0 && (
-        <section className="mb-6">
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-mist-500">
-            A surveiller
-          </h2>
-          <div className="space-y-2">
-            {alerts.map((a, i) => (
-              <div
-                key={i}
-                className={`rounded-lg border px-3 py-2 text-sm ${
-                  a.bad
-                    ? 'border-bad-600/40 bg-bad-600/10 text-bad-400'
-                    : 'border-warn-600/40 bg-warn-600/10 text-warn-400'
-                }`}
-              >
-                {a.text}
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
       {failed.length > 0 && (
         <section className="mb-6">

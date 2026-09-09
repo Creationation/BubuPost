@@ -133,9 +133,14 @@ export function Modal({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-950/80 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-950/70 p-4 backdrop-blur-sm">
+      {/*
+        Surface opaque, pas de verre. Une modale porte du texte qu'on doit lire
+        sans effort, et la translucidite y ferait passer le contenu de la page
+        en dessous.
+      */}
       <div
-        className={`panel my-8 w-full ${wide ? 'max-w-3xl' : 'max-w-lg'}`}
+        className={`solide my-8 w-full ${wide ? 'max-w-3xl' : 'max-w-lg'}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useState } from 'react'
 import {
   listAccounts,
@@ -22,17 +23,7 @@ import { formatDateTime } from '../lib/format'
 import { rafraichirPassage } from '../lib/scheduler'
 import { Alert, Loading, PageHeader } from '../components/ui'
 
-const DAYS = [
-  { key: 'mon', label: 'Lundi' },
-  { key: 'tue', label: 'Mardi' },
-  { key: 'wed', label: 'Mercredi' },
-  { key: 'thu', label: 'Jeudi' },
-  { key: 'fri', label: 'Vendredi' },
-  { key: 'sat', label: 'Samedi' },
-  { key: 'sun', label: 'Dimanche' },
-]
 
-type Cadence = Record<string, number>
 type Limits = Record<string, number>
 type Notify = { telegram_enabled: boolean; notify_on_success: boolean }
 type Retry = { max_attempts: number; backoff_minutes: number[] }
@@ -60,7 +51,6 @@ export default function Admin() {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [posts, setPosts] = useState<PostWithAccount[]>([])
-  const [cadence, setCadence] = useState<Cadence>({})
   const [limits, setLimits] = useState<Limits>({})
   const [notify, setNotify] = useState<Notify>({
     telegram_enabled: true,
@@ -86,7 +76,6 @@ export default function Admin() {
       setProfiles(p)
       setAccounts(a)
       setPosts(po)
-      if (settings.cadence) setCadence(settings.cadence as Cadence)
       if (settings.limits) setLimits(settings.limits as Limits)
       if (settings.notify) setNotify(settings.notify as Notify)
       if (settings.retry) setRetry(settings.retry as Retry)
@@ -192,32 +181,20 @@ export default function Admin() {
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Card
-          title="Cadence visee"
-          hint="Nombre de videos par jour. C'est un repere affiche, le scheduler publie ce que tu programmes."
+          title="Cadence de publication"
+          hint="Elle se regle desormais dans Automatisation, la ou elle est appliquee."
         >
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {DAYS.map((d) => (
-              <div key={d.key}>
-                <label className="label" htmlFor={`cad-${d.key}`}>
-                  {d.label}
-                </label>
-                <input
-                  id={`cad-${d.key}`}
-                  type="number"
-                  min={0}
-                  max={20}
-                  className="field"
-                  value={cadence[d.key] ?? 0}
-                  onChange={(e) =>
-                    setCadence({ ...cadence, [d.key]: Number(e.target.value) || 0 })
-                  }
-                />
-              </div>
-            ))}
-          </div>
-          <button className="btn btn-ghost mt-4" onClick={() => void save('cadence', cadence)}>
-            Enregistrer la cadence
-          </button>
+          <p className="text-sm text-mist-500">
+            Le nombre de videos par jour et par marque se regle dans{' '}
+            <Link to="/automatisation" className="text-brand-400 hover:underline">
+              Automatisation, onglet Cadence
+            </Link>
+            , ou le moteur s en sert reellement pour placer les creneaux.
+          </p>
+          <p className="mt-2 text-sm text-mist-500">
+            Il etait aussi ici, sans aucun effet sur la publication. Deux endroits pour un meme
+            reglage, dont un seul compte, est une facon sure de se tromper.
+          </p>
         </Card>
 
         <Card

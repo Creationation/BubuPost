@@ -398,17 +398,15 @@ function Suivi({
 
       <section className="panel p-5">
         <h2 className="mb-1 font-semibold">Fichiers vus</h2>
-        <p className="mb-2 text-sm text-mist-500">
-          Un fichier accepte va dans la{' '}
-          <Link to="/bibliotheque" className="text-brand-400 hover:underline">
-            bibliotheque
-          </Link>
-          , pas directement en campagne : c est la que tu decides de l ordre.
-        </p>
         <p className="mb-4 text-sm text-mist-500">
           {rejetes.length > 0
-            ? `${rejetes.length} fichier(s) refuse(s). Ils sont restes en place : corrige le nom ou les reglages, puis rejoue-les.`
-            : 'Les derniers fichiers deposes dans les dossiers surveilles.'}
+            ? `${rejetes.length} fichier(s) refuse(s), restes en place. Corrige le nom ou les reglages, puis rejoue-les.`
+            : 'Les derniers fichiers vus, et ce qu ils sont devenus.'}{' '}
+          Un fichier accepte va dans la{' '}
+          <Link to="/bibliotheque" className="text-brand-400 hover:underline">
+            Reserve
+          </Link>
+          , pas directement en campagne.
         </p>
 
         {imports.length === 0 ? (

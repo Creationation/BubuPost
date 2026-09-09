@@ -1,5 +1,6 @@
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { definirTheme, THEMES, useTheme } from '../lib/theme'
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: '◧', end: true },
@@ -19,6 +20,41 @@ function navClass({ isActive }: { isActive: boolean }) {
       ? 'border border-brand-500/30 bg-brand-500/15 text-mist-100'
       : 'border border-transparent text-mist-500 hover:bg-ink-800 hover:text-mist-100',
   ].join(' ')
+}
+
+/**
+ * Clair, sombre, ou ce que dit le systeme.
+ *
+ * Trois boutons plutot qu'une bascule a deux etats : sans le troisieme, on ne
+ * peut plus revenir au reglage du systeme une fois qu'on y a touche.
+ */
+function ChoixTheme() {
+  const { choix } = useTheme()
+
+  return (
+    <div
+      className="flex gap-1 rounded-xl border border-ink-700 bg-ink-850/60 p-1"
+      role="group"
+      aria-label="Apparence"
+    >
+      {THEMES.map((t) => (
+        <button
+          key={t.valeur}
+          onClick={() => definirTheme(t.valeur)}
+          aria-pressed={choix === t.valeur}
+          title={t.label}
+          className={`flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs transition-colors ${
+            choix === t.valeur
+              ? 'bg-brand-500 text-white'
+              : 'text-mist-500 hover:text-mist-100'
+          }`}
+        >
+          <span aria-hidden="true">{t.icone}</span>
+          <span className="sr-only">{t.label}</span>
+        </button>
+      ))}
+    </div>
+  )
 }
 
 function LegalLinks({ className = '' }: { className?: string }) {
@@ -57,6 +93,7 @@ export default function Layout() {
         </nav>
 
         <div className="mt-auto space-y-3 border-t border-ink-800 pt-4">
+          <ChoixTheme />
           <p className="truncate px-2 text-xs text-mist-600">{user?.email}</p>
           <button className="btn btn-ghost w-full" onClick={() => void signOut()}>
             Deconnexion

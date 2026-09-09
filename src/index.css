@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+/*
+ * Les couleurs portent un ROLE, pas une teinte.
+ *
+ *   ink   : les fonds, du plus profond au plus clair
+ *   mist  : les textes, du plus contraste au plus discret
+ *
+ * En mode clair les valeurs s'inversent : ink devient blanc, mist devient
+ * sombre. C'est ce qui permet de basculer tout l'ecran sans toucher a un seul
+ * composant, puisque Tailwind v4 emet des utilitaires qui pointent vers ces
+ * variables plutot que d'y inscrire la couleur en dur.
+ *
+ * Les valeurs ci-dessous sont celles du mode sombre, qui reste le defaut.
+ */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -29,31 +42,142 @@
   --color-idle-400: #7dd3fc;
 }
 
+/*
+ * Ce qui differe entre les deux modes, au-dela des couleurs.
+ *
+ * Le verre ne se transpose pas tel quel. Sur fond sombre il s'eclaircit, sur
+ * fond clair il s'assombrit : dans les deux cas il doit se detacher du fond,
+ * et une opacite unique donnerait un panneau invisible d'un cote, sale de
+ * l'autre. L'ombre n'existe qu'en clair : sur un fond noir elle ne se voit pas
+ * et coute du rendu pour rien.
+ */
 :root {
   color-scheme: dark;
+
+  --verre-fond: rgba(21, 24, 34, 0.66);
+  --verre-flou: 16px;
+  --verre-bord: rgba(255, 255, 255, 0.07);
+  --verre-lueur: rgba(255, 255, 255, 0.05);
+  --ombre-panneau: none;
+  --ombre-flottante: 0 24px 60px -20px rgba(0, 0, 0, 0.7);
+
+  /* Les deux halos qui donnent au verre quelque chose a refracter. */
+  --halo-un: rgba(92, 108, 245, 0.16);
+  --halo-deux: rgba(52, 211, 153, 0.08);
+}
+
+:root[data-theme='clair'] {
+  color-scheme: light;
+
+  --color-ink-950: #f2f4f9;
+  --color-ink-900: #ffffff;
+  --color-ink-850: #f8f9fc;
+  --color-ink-800: #eef0f6;
+  --color-ink-700: #dfe3ec;
+  --color-ink-600: #c3c9d8;
+
+  /*
+   * Les textes s'inversent. Le plus contraste vise le noir sans l'atteindre :
+   * du noir pur sur du blanc pur fatigue, et l'accessibilite demande du
+   * contraste suffisant, pas du contraste maximal.
+   */
+  --color-mist-100: #14161d;
+  --color-mist-300: #3d4353;
+  --color-mist-500: #626a7d;
+  --color-mist-600: #7f8798;
+
+  /* Les accents s'assombrissent : un violet clair sur blanc ne se lit pas. */
+  --color-brand-400: #4553d8;
+  --color-brand-500: #4553d8;
+  --color-brand-600: #333fb0;
+
+  /*
+   * Les paires 400 et 600 servent partout en texte-sur-fond-teinte. En clair,
+   * le 400 devient la couleur du texte et le 600 celle du fond, sinon les
+   * pastilles d'etat deviennent illisibles.
+   */
+  --color-ok-400: #067a53;
+  --color-ok-600: #a8e6cf;
+  --color-warn-400: #8a5c00;
+  --color-warn-600: #f3dda6;
+  --color-bad-400: #c02444;
+  --color-bad-600: #f5c6d0;
+  --color-idle-400: #0d6f9e;
+
+  --verre-fond: rgba(255, 255, 255, 0.74);
+  --verre-flou: 18px;
+  --verre-bord: rgba(16, 18, 24, 0.09);
+  --verre-lueur: rgba(255, 255, 255, 0.85);
+  --ombre-panneau: 0 1px 2px rgba(16, 18, 24, 0.04), 0 10px 30px -14px rgba(16, 18, 24, 0.16);
+  --ombre-flottante: 0 24px 60px -20px rgba(16, 18, 24, 0.28);
+
+  --halo-un: rgba(92, 108, 245, 0.1);
+  --halo-deux: rgba(52, 211, 153, 0.07);
 }
 
 html, body, #root {
   height: 100%;
 }
 
+/*
+ * Le fond n'est pas un aplat.
+ *
+ * Le verre ne se voit que s'il a quelque chose a refracter : pose sur une
+ * couleur unie, un panneau translucide est indistinguable d'un panneau opaque.
+ * Ces deux halos sont donc structurels, pas decoratifs.
+ */
 body {
   margin: 0;
   background:
-    radial-gradient(900px 600px at 12% -10%, rgba(92, 108, 245, 0.16), transparent 60%),
-    radial-gradient(700px 500px at 92% 0%, rgba(52, 211, 153, 0.08), transparent 55%),
+    radial-gradient(900px 600px at 12% -10%, var(--halo-un), transparent 60%),
+    radial-gradient(700px 500px at 92% 0%, var(--halo-deux), transparent 55%),
     var(--color-ink-950);
+  background-attachment: fixed;
   color: var(--color-mist-100);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 @layer components {
+  /*
+   * Le verre, reserve aux surfaces qui flottent.
+   *
+   * La ligne claire en haut imite la tranche d'une plaque prise dans la
+   * lumiere. C'est ce detail, plus que le flou, qui separe un panneau
+   * translucide d'un panneau qui a l'air d'un materiau.
+   */
   .panel {
-    background: color-mix(in oklab, var(--color-ink-900) 88%, transparent);
+    background: var(--verre-fond);
+    border: 1px solid var(--verre-bord);
+    border-radius: 16px;
+    backdrop-filter: blur(var(--verre-flou)) saturate(140%);
+    -webkit-backdrop-filter: blur(var(--verre-flou)) saturate(140%);
+    box-shadow: var(--ombre-panneau);
+    position: relative;
+  }
+
+  .panel::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    border-radius: 16px 16px 0 0;
+    background: linear-gradient(90deg, transparent, var(--verre-lueur), transparent);
+    pointer-events: none;
+  }
+
+  /*
+   * Une surface opaque, pour ce qui doit se lire sans discussion.
+   *
+   * Les recommandations sont nettes la-dessus : pas de translucidite derriere
+   * un texte critique. Les modales l'emploient.
+   */
+  .solide {
+    background: var(--color-ink-900);
     border: 1px solid var(--color-ink-700);
     border-radius: 16px;
-    backdrop-filter: blur(12px);
+    box-shadow: var(--ombre-flottante);
   }
 
   .btn {
@@ -68,15 +192,32 @@ body {
     line-height: 1.2;
     border: 1px solid transparent;
     cursor: pointer;
-    transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      opacity 0.15s ease,
+      transform 0.1s ease;
   }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn:active:not(:disabled) { transform: translateY(1px); }
+  .btn:focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+  }
 
   .btn-primary { background: var(--color-brand-500); color: white; }
   .btn-primary:hover:not(:disabled) { background: var(--color-brand-400); }
 
-  .btn-ghost { background: transparent; border-color: var(--color-ink-700); color: var(--color-mist-300); }
-  .btn-ghost:hover:not(:disabled) { border-color: var(--color-ink-600); color: var(--color-mist-100); }
+  .btn-ghost {
+    background: color-mix(in oklab, var(--color-ink-800) 55%, transparent);
+    border-color: var(--color-ink-700);
+    color: var(--color-mist-300);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--color-ink-800);
+    border-color: var(--color-ink-600);
+    color: var(--color-mist-100);
+  }
 
   .btn-danger { background: transparent; border-color: var(--color-bad-600); color: var(--color-bad-400); }
   .btn-danger:hover:not(:disabled) { background: color-mix(in oklab, var(--color-bad-600) 25%, transparent); }
@@ -90,9 +231,12 @@ body {
     font-size: 0.9rem;
     color: var(--color-mist-100);
     outline: none;
-    transition: border-color 0.15s ease;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
-  .field:focus { border-color: var(--color-brand-500); }
+  .field:focus {
+    border-color: var(--color-brand-500);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-brand-500) 18%, transparent);
+  }
   .field::placeholder { color: var(--color-mist-600); }
 
   .label {

@@ -1,6 +1,11 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import { initialiserTheme } from './lib/theme'
+
+// Avant le premier rendu : sinon l'ecran s'affiche en sombre puis bascule,
+// et le clignotement se voit.
+initialiserTheme()
 import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(

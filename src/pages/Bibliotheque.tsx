@@ -179,18 +179,36 @@ export default function Bibliotheque() {
 
       {seuilBas.length > 0 && (
         <div className="mb-4">
+          {/*
+            Une seule phrase, meme pour trois marques. Trois lignes qui disent
+            la meme chose mot pour mot se lisent comme du bruit, et le creneau
+            saute, qui est l'information utile, s'y perd.
+          */}
           <Alert kind={seuilBas.some((r) => r.reste === 0) ? 'error' : 'info'}>
-            {seuilBas.map((r) => (
-              <span key={r.marque} className="block">
-                {r.reste === 0
-                  ? `${r.marque} n a plus aucune video en reserve${
-                      r.creneauSaute
-                        ? `, le creneau du ${formatDateTime(r.creneauSaute)} sera saute.`
-                        : '.'
-                    }`
-                  : `${r.marque} : ${r.reste} video${r.reste > 1 ? 's' : ''} en reserve, seuil a ${r.seuil}.`}
-              </span>
-            ))}
+            {(() => {
+              const vides = seuilBas.filter((r) => r.reste === 0)
+              const basses = seuilBas.filter((r) => r.reste > 0)
+              const creneau = vides.find((r) => r.creneauSaute)?.creneauSaute
+              const phrases: string[] = []
+
+              if (vides.length > 0) {
+                phrases.push(
+                  vides.length === reserve.length
+                    ? 'Aucune video en reserve, aucune marque'
+                    : `Aucune video en reserve pour ${vides.map((r) => r.marque).join(', ')}`,
+                )
+                if (creneau) {
+                  phrases[phrases.length - 1] +=
+                    `. Le creneau du ${formatDateTime(creneau)} sera saute`
+                }
+              }
+              if (basses.length > 0) {
+                phrases.push(
+                  `Reserve basse : ${basses.map((r) => `${r.marque} (${r.reste})`).join(', ')}`,
+                )
+              }
+              return phrases.join('. ') + '.'
+            })()}
           </Alert>
         </div>
       )}

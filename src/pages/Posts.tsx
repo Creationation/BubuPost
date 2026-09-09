@@ -18,7 +18,6 @@ import PostComposer from '../components/PostComposer'
 import { PostEditor, PostLogs, PostRow } from '../components/PostRow'
 import { LigneCampagne, useCampagnesOuvertes } from '../components/Campagne'
 import Calendrier, { type DemandeDeplacement } from '../components/Calendrier'
-import { QuotaYoutube } from '../components/QuotaYoutube'
 
 const STATUS_FILTERS = [
   'a_valider',
@@ -359,7 +358,11 @@ export default function Posts() {
         <Loading />
       ) : vue === 'calendrier' ? (
         <>
-          <QuotaYoutube actif={accounts.some((a) => a.platform === 'youtube')} />
+          {/*
+            Le quota vit sur le Dashboard. Le repeter ici pousserait le
+            calendrier sous la ligne de flottaison, et chaque jour porte deja
+            son propre compteur d envois YouTube.
+          */}
           <Calendrier
             posts={filtered}
             tousPosts={posts}

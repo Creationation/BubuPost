@@ -483,7 +483,7 @@ export default function Guide() {
           separes par un tiret bas, dans cet ordre :
         </p>
         <p className="my-3 rounded-lg border border-ink-700 bg-ink-850 px-3 py-2 font-mono text-xs text-mist-100">
-          EdgeSyncFX_stop-loss-trop-serre_fr.mp4
+          EdgeSyncFX_backtest-vs-real-account_en.mp4
         </p>
         <ul className="space-y-1.5 text-sm text-mist-300">
           <li>
@@ -491,20 +491,25 @@ export default function Guide() {
             correspondre exactement a celle de tes comptes.
           </li>
           <li>
-            <span className="font-medium text-mist-100">stop-loss-trop-serre</span> : le sujet. Les
-            tirets deviennent des espaces, donc ecris la phrase avec des tirets entre les mots.
+            <span className="font-medium text-mist-100">backtest-vs-real-account</span> : le sujet.
+            Les tirets deviennent des espaces, donc ecris la phrase avec des tirets entre les mots.
           </li>
           <li>
-            <span className="font-medium text-mist-100">fr</span> : la langue, en deux lettres.
+            <span className="font-medium text-mist-100">en</span> : la langue, en deux lettres. Tes
+            comptes publient en anglais, seule l application est en francais.
           </li>
         </ul>
+        <p className="mt-3 text-sm text-mist-500">
+          Un dossier surveille est une SOURCE, pas une marque : c est lui qui dit vers quelles
+          marques son contenu part, et la marque disparait alors du nom du fichier. Tu ecris
+          seulement <span className="font-mono">mon-sujet_en.mp4</span>.
+        </p>
         <p className="mt-3 text-sm text-mist-500">
           Tu peux changer le separateur, l ordre et les elements dans{' '}
           <Link to="/automatisation" className="text-brand-400 hover:underline">
             Automatisation, onglet Nommage
           </Link>
-          , et surtout tester un nom avant de deposer quoi que ce soit. Si un dossier est dedie a
-          une marque, tu peux omettre la marque dans le nom.
+          , et surtout tester un nom avant de deposer quoi que ce soit.
         </p>
         <p className="mt-2 text-sm text-mist-500">
           Un nom qui ne suit pas la regle ne fait rien perdre : le fichier reste ou il est, apparait
