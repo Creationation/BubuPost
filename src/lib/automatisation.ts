@@ -35,6 +35,35 @@ export function journeesVues(inventaire: unknown): Journee[] {
     .sort((a, b) => a.date.localeCompare(b.date))
 }
 
+/**
+ * La date AAAA-MM-JJ portee par une cle source « 28072026/1_matin/x.mp4 ».
+ * Null si aucune partie du chemin n est une date JJMMAAAA.
+ */
+export function dateDeSource(cle: string | null | undefined): string | null {
+  for (const partie of (cle ?? '').split(/[\\/]+/)) {
+    const m = partie.match(/^(\d{2})(\d{2})(\d{4})$/)
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`
+  }
+  return null
+}
+
+/**
+ * Regroupe une liste deja triee en blocs consecutifs de meme cle.
+ *
+ * Une liste se lit par jour, puis par heure : ce qui change de jour ouvre un
+ * bloc. L ordre des elements est celui recu, on ne retrie rien ici.
+ */
+export function parBlocs<T>(liste: T[], cleDe: (x: T) => string): { cle: string; items: T[] }[] {
+  const blocs: { cle: string; items: T[] }[] = []
+  for (const x of liste) {
+    const cle = cleDe(x)
+    const dernier = blocs[blocs.length - 1]
+    if (dernier && dernier.cle === cle) dernier.items.push(x)
+    else blocs.push({ cle, items: [x] })
+  }
+  return blocs
+}
+
 /** « 7 septembre 2026 », depuis une date AAAA-MM-JJ. */
 export function dateLisible(iso: string): string {
   const [a, m, j] = iso.split('-')

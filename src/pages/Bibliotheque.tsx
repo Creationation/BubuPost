@@ -19,15 +19,17 @@ import {
 } from '../lib/api'
 import { friendlyError } from '../lib/errors'
 import {
+  dateDeSource,
   dateLisible,
   journeesVues,
+  parBlocs,
   normaliserConfig,
   type ConfigAuto,
   type Dossier,
   type Video,
 } from '../lib/automatisation'
 import { LANGUES, teinteLangue, langue as trouverLangue } from '../lib/langues'
-import { formatDateTime, toLocalInput, fromLocalInput } from '../lib/format'
+import { formatDateTime, formatDay, formatTime, toLocalInput, fromLocalInput } from '../lib/format'
 import { Alert, ConfirmModal, EmptyState, Loading, Modal, PageHeader } from '../components/ui'
 import { LecteurVideo } from '../components/Video'
 
@@ -120,10 +122,27 @@ export default function Bibliotheque() {
 
   const programmees = useMemo(
     () =>
-      videos.filter(
-        (v) => v.statut === 'programmee' && (!filtreMarque || v.marque === filtreMarque),
-      ),
+      videos
+        .filter((v) => v.statut === 'programmee' && (!filtreMarque || v.marque === filtreMarque))
+        // Dans l ordre ou elles partiront : le jour, l heure, puis la marque.
+        .sort(
+          (a, b) =>
+            (a.programmee_pour ?? '').localeCompare(b.programmee_pour ?? '') ||
+            a.marque.localeCompare(b.marque),
+        ),
     [videos, filtreMarque],
+  )
+
+  /** La file, par journee de tournage : un bloc par jour, matin puis soir. */
+  const fileParJour = useMemo(
+    () => parBlocs(enFile, (v) => dateDeSource(v.source_cle) ?? ''),
+    [enFile],
+  )
+
+  /** Les programmees, par jour de publication. */
+  const programmeesParJour = useMemo(
+    () => parBlocs(programmees, (v) => (v.programmee_pour ?? '').slice(0, 10)),
+    [programmees],
   )
 
   const parId = useMemo(() => new Map(previsions.map((p) => [p.id, p])), [previsions])
@@ -297,7 +316,16 @@ export default function Bibliotheque() {
         />
       ) : (
         <ul className="space-y-3">
-          {enFile.map((v) => {
+          {fileParJour.flatMap((bloc) => [
+            <li key={'jour-' + bloc.cle} className="pt-2 first:pt-0">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-mist-500">
+                {bloc.cle ? `Tournage du ${dateLisible(bloc.cle)}` : 'Sans date de tournage'}
+                <span className="ml-2 font-normal normal-case text-mist-600">
+                  {bloc.items.length} video{bloc.items.length > 1 ? 's' : ''}
+                </span>
+              </h2>
+            </li>,
+            ...bloc.items.map((v) => {
             const prevision = parId.get(v.id)
             const enPause = v.statut === 'en_pause'
             return (
@@ -416,7 +444,8 @@ export default function Bibliotheque() {
                 </div>
               </li>
             )
-          })}
+            }),
+          ])}
         </ul>
       )}
 
@@ -425,22 +454,32 @@ export default function Bibliotheque() {
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-mist-500">
             Deja programmees
           </h2>
-          <ul className="space-y-2">
-            {programmees.map((v) => (
-              <li key={v.id} className="panel flex flex-wrap items-center gap-3 p-3">
-                <span className="text-xs text-ok-400">✓</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm">{v.sujet}</span>
-                  <span className="block text-xs text-mist-600">
-                    {v.marque} ·{' '}
-                    {v.programmee_pour
-                      ? `programmee le ${formatDateTime(v.programmee_pour)}`
-                      : 'campagne creee'}
+          <div className="space-y-5">
+            {programmeesParJour.map((bloc) => (
+              <div key={bloc.cle || 'sans-date'}>
+                <h3 className="mb-2 text-xs font-semibold capitalize text-mist-400">
+                  {bloc.cle ? formatDay(bloc.items[0].programmee_pour as string) : 'Sans date'}
+                  <span className="ml-2 font-normal normal-case text-mist-600">
+                    {bloc.items.length} campagne{bloc.items.length > 1 ? 's' : ''}
                   </span>
-                </span>
-              </li>
+                </h3>
+                <ul className="space-y-2">
+                  {bloc.items.map((v) => (
+                    <li key={v.id} className="panel flex flex-wrap items-center gap-3 p-3">
+                      <span className="w-12 shrink-0 text-sm tabular-nums text-mist-300">
+                        {v.programmee_pour ? formatTime(v.programmee_pour) : ''}
+                      </span>
+                      <span className="text-xs text-ok-400">✓</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm">{v.sujet}</span>
+                        <span className="block text-xs text-mist-600">{v.marque}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
         </section>
       )}
 
@@ -665,16 +704,21 @@ function VueSources({
         </div>
       )}
 
+      <div className="space-y-5">
+        {parBlocs(visibles, (s) => dateDeSource(s.source_cle) ?? '').map((bloc) => (
+          <div key={bloc.cle || 'sans-date'}>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-mist-500">
+              {bloc.cle ? `Tournage du ${dateLisible(bloc.cle)}` : 'Sans date de tournage'}
+            </h3>
       <ul className="space-y-2">
-        {visibles.map((s) => {
+        {bloc.items.map((s) => {
           const lu = lireCle(s.source_cle)
           return (
             <li key={s.source_cle} className="panel p-3">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-mist-100">
-                    {lu.date}
-                    {lu.creneau && <span className="text-mist-400"> · {lu.creneau}</span>}
+                  <p className="text-sm font-medium capitalize text-mist-100">
+                    {lu.creneau || lu.date}
                   </p>
                   <p className="mt-0.5 truncate font-mono text-[11px] text-mist-600" title={s.source_cle}>
                     {s.source_cle}
@@ -715,6 +759,9 @@ function VueSources({
           )
         })}
       </ul>
+          </div>
+        ))}
+      </div>
 
       {visibles.length === 0 && sources.length > 0 && (
         <p className="py-8 text-center text-sm text-mist-500">
