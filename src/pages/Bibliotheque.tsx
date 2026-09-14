@@ -420,7 +420,7 @@ export default function Bibliotheque() {
         </ul>
       )}
 
-      {programmees.length > 0 && (
+      {vue === 'file' && programmees.length > 0 && (
         <section className="mt-8">
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-mist-500">
             Deja programmees
