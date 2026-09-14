@@ -167,7 +167,11 @@ const TONS: Record<Point['gravite'], { bord: string; texte: string; icone: strin
   info: { bord: 'border-ink-700 bg-ink-850', texte: 'text-mist-500', icone: '·' },
 }
 
-export function ListeAttention({ points }: { points: Point[] }) {
+export function ListeAttention({ points, pret = true }: { points: Point[]; pret?: boolean }) {
+  // Dire « tout va bien » avant d'avoir regarde serait un mensonge de
+  // quelques secondes : on se tait tant que la reserve n'a pas repondu.
+  if (points.length === 0 && !pret) return null
+
   if (points.length === 0) {
     return (
       <div className="panel flex items-center gap-3 p-4">

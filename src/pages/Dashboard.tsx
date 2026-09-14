@@ -43,6 +43,7 @@ export default function Dashboard() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [config, setConfig] = useState<ConfigAuto | null>(null)
   const [reserve, setReserve] = useState<EtatReserve[]>([])
+  const [reserveConnue, setReserveConnue] = useState(false)
   const [ping, setPing] = useState<SignesDeVie | null>(null)
   const [dossiers, setDossiers] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -78,6 +79,8 @@ export default function Dashboard() {
         setReserve((await apercuCadence()).reserve)
       } catch {
         // L'apercu appelle une fonction : son echec ne doit rien casser ici.
+      } finally {
+        setReserveConnue(true)
       }
     })()
   }, [])
@@ -168,7 +171,7 @@ export default function Dashboard() {
         decrivent, cette liste-la agit.
       */}
       <div className="mb-6">
-        <ListeAttention points={attention} />
+        <ListeAttention points={attention} pret={reserveConnue} />
       </div>
 
       <ProchainePublication posts={posts} />
