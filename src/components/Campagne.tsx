@@ -29,11 +29,17 @@ export function LigneCampagne({
   posts,
   ouvert,
   onToggle,
+  titre,
+  fichierSource,
   children,
 }: {
   posts: PostWithAccount[]
   ouvert: boolean
   onToggle: () => void
+  /** Le sujet de la video, quand la campagne vient de la reserve. */
+  titre?: string
+  /** Le nom du fichier d origine, lisible, plutot que celui du stockage. */
+  fichierSource?: string
   children: React.ReactNode
 }) {
   const premier = posts[0]
@@ -46,7 +52,8 @@ export function LigneCampagne({
     .filter((p) => p.status === 'pending' || p.status === 'processing')
     .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))[0]
 
-  const fichier = premier.video_url.split('/').pop() || premier.video_url
+  const fichier = fichierSource || premier.video_url.split('/').pop() || premier.video_url
+  const marque = premier.accounts?.brand
 
   return (
     <div className="panel overflow-hidden">
@@ -59,7 +66,7 @@ export function LigneCampagne({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-mist-600">{ouvert ? '▼' : '▶'}</span>
             <span className="text-sm font-semibold">
-              Campagne, {posts.length} comptes
+              {marque ? `${marque}, ${posts.length} comptes` : `Campagne, ${posts.length} comptes`}
             </span>
             <span className="flex gap-1 text-xs opacity-70">
               {plateformes.map((p) => (
@@ -70,7 +77,8 @@ export function LigneCampagne({
             </span>
           </div>
 
-          <p className="mt-1.5 truncate text-xs text-mist-500" title={premier.video_url}>
+          {titre && <p className="mt-1.5 truncate text-sm text-mist-200">{titre}</p>}
+          <p className={`${titre ? 'mt-0.5' : 'mt-1.5'} truncate text-xs text-mist-500`} title={premier.video_url}>
             <span className="mr-1 opacity-70">▷</span>
             {fichier}
           </p>

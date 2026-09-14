@@ -55,6 +55,8 @@ type Props = {
   onOuvrir: (post: PostWithAccount) => void
   onDeplacer: (demande: DemandeDeplacement) => void
   onRefus: (message: string) => void
+  /** Le sujet de la video par campagne, quand elle vient de la reserve. */
+  sujets?: Map<string, { sujet: string; fichier: string }>
 }
 
 export default function Calendrier({
@@ -64,6 +66,7 @@ export default function Calendrier({
   onOuvrir,
   onDeplacer,
   onRefus,
+  sujets,
 }: Props) {
   const [vue, setVue] = useState<Vue>('mois')
   const [ancre, setAncre] = useState<Date>(() => debutDeJour(new Date()))
@@ -186,6 +189,7 @@ export default function Calendrier({
           onCreer={onCreer}
           onOuvrir={onOuvrir}
           debutGlisse={debutGlisse}
+          sujets={sujets}
         />
       ) : (
         <GrilleHeures
@@ -198,6 +202,7 @@ export default function Calendrier({
           onCreer={onCreer}
           onOuvrir={onOuvrir}
           debutGlisse={debutGlisse}
+          sujets={sujets}
         />
       )}
 
@@ -272,6 +277,7 @@ type CommunProps = {
   onCreer: (quand: Date) => void
   onOuvrir: (post: PostWithAccount) => void
   debutGlisse: (post: PostWithAccount, e: React.DragEvent) => void
+  sujets?: Map<string, { sujet: string; fichier: string }>
 }
 
 function GrilleMois({
@@ -286,6 +292,7 @@ function GrilleMois({
   onCreer,
   onOuvrir,
   debutGlisse,
+  sujets,
 }: CommunProps & { depliees: Set<string>; basculer: (cle: string) => void }) {
   const moisAffiche = jours[15].getMonth()
   const cleAujourdhui = cleJour(maintenant)
@@ -345,6 +352,7 @@ function GrilleMois({
                     post={post}
                     onOuvrir={onOuvrir}
                     debutGlisse={debutGlisse}
+                    sujet={post.campaign_id ? sujets?.get(post.campaign_id)?.sujet : undefined}
                   />
                 ))}
               </div>
@@ -387,6 +395,7 @@ function GrilleHeures({
   onCreer,
   onOuvrir,
   debutGlisse,
+  sujets,
 }: CommunProps) {
   const cleAujourdhui = cleJour(maintenant)
   const heureCourante = maintenant.getHours()
@@ -450,6 +459,7 @@ function GrilleHeures({
                         detaille={jours.length === 1}
                         onOuvrir={onOuvrir}
                         debutGlisse={debutGlisse}
+                        sujet={post.campaign_id ? sujets?.get(post.campaign_id)?.sujet : undefined}
                       />
                     ))}
                   </button>
@@ -482,11 +492,14 @@ function Pastille({
   detaille,
   onOuvrir,
   debutGlisse,
+  sujet,
 }: {
   post: PostWithAccount
   detaille?: boolean
   onOuvrir: (post: PostWithAccount) => void
   debutGlisse: (post: PostWithAccount, e: React.DragEvent) => void
+  /** De quelle video il s agit : sans lui, on ne voit qu un nom de compte. */
+  sujet?: string
 }) {
   const teinte = couleurCampagne(post.campaign_id)
   const bougeable = deplacable(post.status)
@@ -496,6 +509,7 @@ function Pastille({
 
   const titre = [
     formatHeure(post.scheduled_at),
+    sujet ?? null,
     PLATFORM_LABEL[plateforme] ?? plateforme,
     post.accounts?.account_name ?? 'compte supprime',
     `texte en ${trouverLangue(codeLangue).label.toLowerCase()}`,
@@ -551,6 +565,11 @@ function Pastille({
       )}
       {detaille && post.accounts?.brand && (
         <span className="hidden shrink-0 text-mist-600 sm:inline">{post.accounts.brand}</span>
+      )}
+      {detaille && sujet && (
+        <span className="hidden min-w-0 flex-1 truncate text-mist-500 md:inline" title={sujet}>
+          {sujet}
+        </span>
       )}
     </div>
   )

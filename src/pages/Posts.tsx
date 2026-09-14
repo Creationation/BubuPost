@@ -5,6 +5,7 @@ import {
   deplacerPosts,
   listAccounts,
   listPosts,
+  listerBibliotheque,
   retryPost,
   validerPost,
 } from '../lib/api'
@@ -80,6 +81,8 @@ function decrireEcart(deltaMs: number): string {
 export default function Posts() {
   const [posts, setPosts] = useState<PostWithAccount[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
+  /** Le sujet et le fichier d origine de chaque campagne venue de la reserve. */
+  const [sujets, setSujets] = useState<Map<string, { sujet: string; fichier: string }>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -113,6 +116,20 @@ export default function Posts() {
       const [p, a] = await Promise.all([listPosts(), listAccounts()])
       setPosts(p)
       setAccounts(a)
+      // La reserve sait de quelle video vient une campagne ; posts ne le
+      // sait pas, il ne porte qu un nom de fichier de stockage illisible.
+      try {
+        const biblio = await listerBibliotheque()
+        setSujets(
+          new Map(
+            biblio
+              .filter((b) => b.campaign_id)
+              .map((b) => [b.campaign_id as string, { sujet: b.sujet, fichier: b.fichier }]),
+          ),
+        )
+      } catch {
+        // Sans la reserve, la liste reste lisible : on retombe sur le nom du fichier.
+      }
       setError(null)
     } catch (err) {
       setError(friendlyError(err))
@@ -163,7 +180,13 @@ export default function Posts() {
     [posts, brand, platform, accountId, status],
   )
 
-  /** Groupe par jour prevu, du plus proche au plus lointain. */
+  /**
+   * Groupe par jour prevu.
+   *
+   * Ce qui vient d abord, du plus proche au plus lointain, et dans la
+   * journee du matin au soir : c est l ordre dans lequel les choses vont se
+   * passer. Ce qui est passe vient apres, du plus recent au plus ancien.
+   */
   const grouped = useMemo(() => {
     const map = new Map<string, PostWithAccount[]>()
     for (const post of filtered) {
@@ -172,7 +195,14 @@ export default function Posts() {
       list.push(post)
       map.set(key, list)
     }
-    return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]))
+    for (const list of map.values()) {
+      list.sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))
+    }
+    const aujourdhui = dayKey(new Date().toISOString())
+    const jours = [...map.entries()]
+    const aVenir = jours.filter(([k]) => k >= aujourdhui).sort((a, b) => a[0].localeCompare(b[0]))
+    const passes = jours.filter(([k]) => k < aujourdhui).sort((a, b) => b[0].localeCompare(a[0]))
+    return { aVenir, passes }
   }, [filtered])
 
   /** Les memes actions, qu'une publication soit seule ou dans une campagne. */
@@ -370,6 +400,7 @@ export default function Posts() {
             onOuvrir={(post) => setEditing(post)}
             onDeplacer={(demande) => setDeplacement(demande)}
             onRefus={(message) => setError(message)}
+            sujets={sujets}
           />
         </>
       ) : filtered.length === 0 ? (
@@ -384,7 +415,7 @@ export default function Posts() {
         />
       ) : (
         <div className="space-y-7">
-          {grouped.map(([key, list]) => (
+          {grouped.aVenir.map(([key, list]) => (
             <section key={key}>
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-mist-500">
                 {formatDay(list[0].scheduled_at)}
@@ -400,6 +431,49 @@ export default function Posts() {
                       posts={entree.posts}
                       ouvert={ouvertes.has(entree.cle)}
                       onToggle={() => basculer(entree.cle)}
+                      titre={sujets.get(entree.cle)?.sujet}
+                      fichierSource={sujets.get(entree.cle)?.fichier}
+                    >
+                      {entree.posts.map((post) => (
+                        <PostRow key={post.id} post={post} {...actions(post)} />
+                      ))}
+                    </LigneCampagne>
+                  ) : (
+                    <PostRow
+                      key={entree.posts[0].id}
+                      post={entree.posts[0]}
+                      {...actions(entree.posts[0])}
+                    />
+                  ),
+                )}
+              </div>
+            </section>
+          ))}
+
+          {grouped.passes.length > 0 && (
+            <h2 className="border-t border-ink-800 pt-6 text-xs font-semibold uppercase tracking-wider text-mist-600">
+              Deja passees
+            </h2>
+          )}
+
+          {grouped.passes.map(([key, list]) => (
+            <section key={key}>
+              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-mist-500">
+                {formatDay(list[0].scheduled_at)}
+                <span className="ml-2 font-normal normal-case text-mist-600">
+                  {list.length} publication{list.length > 1 ? 's' : ''}
+                </span>
+              </h2>
+              <div className="space-y-3">
+                {regrouper(list).map((entree) =>
+                  entree.campagne ? (
+                    <LigneCampagne
+                      key={entree.cle}
+                      posts={entree.posts}
+                      ouvert={ouvertes.has(entree.cle)}
+                      onToggle={() => basculer(entree.cle)}
+                      titre={sujets.get(entree.cle)?.sujet}
+                      fichierSource={sujets.get(entree.cle)?.fichier}
                     >
                       {entree.posts.map((post) => (
                         <PostRow key={post.id} post={post} {...actions(post)} />
