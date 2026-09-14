@@ -10,6 +10,7 @@ import {
   lireConfigAuto,
   majVideo,
   programmerVideo,
+  remettreVideo,
   supprimerVideo,
   type EtatMarque,
   type EtatReserve,
@@ -109,7 +110,10 @@ export default function Bibliotheque() {
   const enFile = useMemo(
     () =>
       videos.filter(
-        (v) => v.statut !== 'programmee' && (!filtreMarque || v.marque === filtreMarque),
+        (v) =>
+          v.statut !== 'programmee' &&
+          v.statut !== 'retiree' &&
+          (!filtreMarque || v.marque === filtreMarque),
       ),
     [videos, filtreMarque],
   )
@@ -279,7 +283,12 @@ export default function Bibliotheque() {
       {loading ? (
         <Loading />
       ) : vue === 'sources' ? (
-        <VueSources sources={sources} filtreMarque={filtreMarque} dossiers={dossiers} />
+        <VueSources
+          sources={sources}
+          filtreMarque={filtreMarque}
+          dossiers={dossiers}
+          onRemettre={(id) => void agir(() => remettreVideo(id), 'Video remise en file')}
+        />
       ) : enFile.length === 0 ? (
         <EmptyState
           icon="▽"
@@ -460,7 +469,7 @@ export default function Bibliotheque() {
       <ConfirmModal
         open={aSupprimer !== null}
         title="Retirer cette video de la file"
-        message="Elle disparait de la bibliotheque et ne sera jamais programmee. Le fichier reste dans le stockage et sur ton disque."
+        message="Elle sort de la file et ne sera pas programmee. Elle reste visible dans « Ou j en suis », marquee retiree, d ou tu peux la remettre en file."
         confirmLabel="Retirer"
         danger
         onConfirm={() => {
@@ -484,6 +493,9 @@ export default function Bibliotheque() {
  */
 /** Ce qu une marque a fait d une video, en un mot et une couleur. */
 function etatMarque(e: EtatMarque): { libelle: string; teinte: string; detail: string } {
+  if (e.statut === 'retiree') {
+    return { libelle: 'retiree', teinte: 'border-ink-700 bg-ink-850 text-mist-600', detail: 'ecartee a la main, ne partira pas' }
+  }
   if (e.statut === 'en_pause') {
     return { libelle: 'en pause', teinte: 'border-mist-500/30 bg-mist-500/10 text-mist-500', detail: 'mise de cote' }
   }
@@ -529,10 +541,12 @@ function VueSources({
   sources,
   filtreMarque,
   dossiers,
+  onRemettre,
 }: {
   sources: Source[]
   filtreMarque: string
   dossiers: Dossier[]
+  onRemettre: (id: string) => void
 }) {
   const [recherche, setRecherche] = useState('')
   const [voirAvant, setVoirAvant] = useState(false)
@@ -565,7 +579,7 @@ function VueSources({
 
   // Totaux sur ce qui est entre, marque par marque confondues.
   const totaux = useMemo(() => {
-    const t = { publiees: 0, programmees: 0, enFile: 0, enPause: 0, echecs: 0 }
+    const t = { publiees: 0, programmees: 0, enFile: 0, enPause: 0, echecs: 0, retirees: 0 }
     for (const s of sources) {
       for (const e of s.etats) {
         if (filtreMarque && e.marque !== filtreMarque) continue
@@ -573,6 +587,7 @@ function VueSources({
         if (l === 'publiee') t.publiees++
         else if (l === 'en file') t.enFile++
         else if (l === 'en pause') t.enPause++
+        else if (l === 'retiree') t.retirees++
         else if (l === 'echec') t.echecs++
         else t.programmees++
       }
@@ -605,6 +620,7 @@ function VueSources({
               <span className="text-brand-400">{totaux.programmees} programmee(s)</span>
               <span className="text-warn-400">{totaux.enFile} en file</span>
               {totaux.enPause > 0 && <span className="text-mist-500">{totaux.enPause} en pause</span>}
+              {totaux.retirees > 0 && <span className="text-mist-600">{totaux.retirees} retiree(s)</span>}
               {totaux.echecs > 0 && <span className="text-bad-400">{totaux.echecs} en echec</span>}
               <span className="text-mist-600">(une video compte une fois par marque)</span>
             </p>
@@ -670,6 +686,19 @@ function VueSources({
                     .filter((e) => !filtreMarque || e.marque === filtreMarque)
                     .map((e) => {
                       const etat = etatMarque(e)
+                      if (e.statut === 'retiree') {
+                        return (
+                          <button
+                            key={e.marque}
+                            type="button"
+                            className={`chip ${etat.teinte} hover:text-mist-300`}
+                            title={`${e.marque} : ${etat.detail}. Cliquer pour la remettre en file.`}
+                            onClick={() => onRemettre(e.id)}
+                          >
+                            {e.marque} · retiree, remettre ?
+                          </button>
+                        )
+                      }
                       return (
                         <span
                           key={e.marque}

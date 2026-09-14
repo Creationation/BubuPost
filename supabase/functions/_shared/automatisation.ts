@@ -475,11 +475,27 @@ export function assembler(
   // repeter donnait « Link in bio Link in bio » en fin de texte.
   const nu = lienNu(lien)
   const dejaLa = (x: string) => nu !== '' && x.toLowerCase().includes(nu)
-  const lienUtile = nu && !dejaLa(cta) && !dejaLa(caption) ? lien : ''
+  const lienUtile =
+    nu && !dejaLa(cta) && !dejaLa(caption) && !memeIdee(cta, lien) ? lien : ''
 
-  const bloc = [cta, lienUtile].filter((x) => x && x.trim()).join(' ')
+  // Chacun sur sa ligne : colles par une espace, « Comment GO and I'll send
+  // you access Link in bio » se lisait comme une seule phrase bancale.
+  const bloc = [cta, lienUtile].filter((x) => x && x.trim()).join('\n')
   if (!bloc) return caption
   return position === 'debut' ? `${bloc}\n\n${caption}` : `${caption}\n\n${bloc}`
+}
+
+/**
+ * Un lien qui n'est pas une adresse (« Link in bio ») dit ou aller. Si
+ * l'appel a l'action parle deja de cet endroit (« the system I use is in
+ * the bio »), le repeter n'ajoute rien. On regarde le dernier mot du lien.
+ */
+function memeIdee(cta: string, lien: string): boolean {
+  if (/\./.test(lien)) return false
+  const mots = lien.trim().toLowerCase().split(/\s+/)
+  const dernier = mots[mots.length - 1]
+  if (!dernier || dernier.length < 3) return false
+  return new RegExp(`\\b${dernier}\\b`, 'i').test(cta)
 }
 
 /** Un lien tel qu'on le reconnait dans un texte : sans protocole ni casse. */

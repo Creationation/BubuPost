@@ -25,6 +25,7 @@ select
   )                                                     as publications_parties,
   jsonb_agg(
     jsonb_build_object(
+      'id', b.id,
       'marque', b.marque,
       'statut', b.statut,
       'programmee_pour', b.programmee_pour,

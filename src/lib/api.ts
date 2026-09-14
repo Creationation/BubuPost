@@ -737,6 +737,7 @@ export async function rejouerImport(id: string): Promise<void> {
  */
 /** L etat d une video pour UNE marque : ou en est sa campagne. */
 export type EtatMarque = {
+  id: string
   marque: string
   statut: string
   programmee_pour: string | null
@@ -776,6 +777,7 @@ export async function listerSources(): Promise<Source[]> {
     etats: (Array.isArray(l.etats) ? l.etats : []).map((e) => {
       const x = (e ?? {}) as Record<string, unknown>
       return {
+        id: String(x.id ?? ''),
         marque: String(x.marque ?? ''),
         statut: String(x.statut ?? ''),
         programmee_pour: typeof x.programmee_pour === 'string' ? x.programmee_pour : null,
@@ -867,8 +869,29 @@ export async function majVideo(id: string, input: VideoInput): Promise<void> {
   unwrap(await supabase.from('bibliotheque').update(input).eq('id', id).select('id'))
 }
 
+/**
+ * Retirer une video : elle sort de la file mais reste visible.
+ *
+ * L effacer laissait un trou : plus moyen de dire, dans « Ou j en suis »,
+ * si elle a ete publiee, oubliee ou ecartee volontairement. Et comme un
+ * fichier accepte une fois n est jamais relu par le watcher, la trace est
+ * le seul endroit ou la decision se voit.
+ */
 export async function supprimerVideo(id: string): Promise<void> {
-  const { error } = await supabase.from('bibliotheque').delete().eq('id', id)
+  const { error } = await supabase
+    .from('bibliotheque')
+    .update({ statut: 'retiree', prioritaire: false })
+    .eq('id', id)
+  if (error) throw new Error(errorMessage(error))
+}
+
+/** L inverse : une video retiree reprend sa place dans la file. */
+export async function remettreVideo(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('bibliotheque')
+    .update({ statut: 'en_file' })
+    .eq('id', id)
+    .eq('statut', 'retiree')
   if (error) throw new Error(errorMessage(error))
 }
 
