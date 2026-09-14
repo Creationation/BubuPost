@@ -277,9 +277,68 @@ export function ciblesPour(comptes: Compte[], marque: string, profil: Profil | n
 // Creneaux
 // ---------------------------------------------------------------------------
 
+/**
+ * Le fuseau dans lequel la cadence se pense.
+ *
+ * Le serveur tourne en UTC. Sans cette conversion, « de 9h a 21h » voulait
+ * dire 11h a 23h en France, et un dimanche commencait a 2h du matin. Les
+ * heures saisies dans l'application sont celles de Diego, pas du serveur.
+ */
+export const FUSEAU = 'Europe/Paris'
+
+type Civil = { annee: number; mois: number; jour: number; heure: number; minute: number; jourSemaine: number }
+
+const FORMAT_CIVIL = new Intl.DateTimeFormat('en-US', {
+  timeZone: FUSEAU,
+  hourCycle: 'h23',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  weekday: 'short',
+})
+
+const INDEX_JOUR: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+
+/** Un instant, lu comme une date et une heure civiles de Paris. */
+export function civil(d: Date): Civil {
+  const parts: Record<string, string> = {}
+  for (const p of FORMAT_CIVIL.formatToParts(d)) parts[p.type] = p.value
+  return {
+    annee: Number(parts.year),
+    mois: Number(parts.month),
+    jour: Number(parts.day),
+    heure: Number(parts.hour),
+    minute: Number(parts.minute),
+    jourSemaine: INDEX_JOUR[parts.weekday] ?? 0,
+  }
+}
+
+/**
+ * L'instant correspondant a une date et une heure civiles de Paris.
+ *
+ * On part de la meme heure en UTC, on mesure de combien Paris s'en ecarte a
+ * cet instant, et on corrige. Une seconde passe rattrape le cas ou la
+ * correction traverse un changement d'heure.
+ */
+export function instant(annee: number, mois: number, jour: number, heure: number, minute: number): Date {
+  let devine = Date.UTC(annee, mois - 1, jour, heure, minute)
+  for (let i = 0; i < 2; i++) {
+    const c = civil(new Date(devine))
+    const vu = Date.UTC(c.annee, c.mois - 1, c.jour, c.heure, c.minute)
+    const voulu = Date.UTC(annee, mois - 1, jour, heure, minute)
+    if (vu === voulu) break
+    devine += voulu - vu
+  }
+  return new Date(devine)
+}
+
+/** Le jour civil de Paris, au format AAAA-MM-JJ. */
 export function cleJour(d: Date): string {
+  const c = civil(d)
   const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+  return `${c.annee}-${p(c.mois)}-${p(c.jour)}`
 }
 
 function minutesDepuisMinuit(hhmm: string): number {
@@ -319,16 +378,17 @@ export function creneauxLibres(
   // vouloir rejouer le calcul pour une autre marque.
   const occupe = { ...dejaParJour }
 
-  const jour = new Date(depuis)
-  jour.setSeconds(0, 0)
+  // Le point de depart, en date civile de Paris. Les jours suivants
+  // s'obtiennent en avancant cette date, pas l'instant : un jour civil ne
+  // fait pas toujours vingt-quatre heures.
+  const origine = civil(depuis)
 
   for (let i = 0; i <= horizonJours && sortie.length < combien; i++) {
-    const cible = new Date(jour)
-    cible.setDate(cible.getDate() + i)
-    if (i > 0) cible.setHours(0, 0, 0, 0)
+    const minuit = instant(origine.annee, origine.mois, origine.jour + i, 0, 0)
+    const cible = civil(minuit)
 
-    const cle = cleJour(cible)
-    const plafond = parMarque[JOURS[cible.getDay()]] ?? 0
+    const cle = cleJour(minuit)
+    const plafond = parMarque[JOURS[cible.jourSemaine]] ?? 0
 
     while (sortie.length < combien && (occupe[cle] ?? 0) < plafond) {
       const rang = occupe[cle] ?? 0
@@ -336,8 +396,7 @@ export function creneauxLibres(
       const pas = plafond > 1 ? (fin - debut) / plafond : 0
       const minute = Math.round(debut + pas * rang)
 
-      const quand = new Date(cible)
-      quand.setHours(Math.floor(minute / 60), minute % 60, 0, 0)
+      const quand = instant(cible.annee, cible.mois, cible.jour, Math.floor(minute / 60), minute % 60)
 
       // Un creneau deja passe ne sert a rien : on le compte comme occupe et on
       // continue, plutot que de programmer dans le passe.
@@ -411,9 +470,25 @@ export function assembler(
   lien: string,
   position: 'debut' | 'fin',
 ): string {
-  const bloc = [cta, lien].filter((x) => x && x.trim()).join(' ')
+  // Le lien ne s'ajoute que s'il apporte quelque chose. Beaucoup d'appels a
+  // l'action le portent deja (« link in bio », « edgesyncfx.app ») : le
+  // repeter donnait « Link in bio Link in bio » en fin de texte.
+  const nu = lienNu(lien)
+  const dejaLa = (x: string) => nu !== '' && x.toLowerCase().includes(nu)
+  const lienUtile = nu && !dejaLa(cta) && !dejaLa(caption) ? lien : ''
+
+  const bloc = [cta, lienUtile].filter((x) => x && x.trim()).join(' ')
   if (!bloc) return caption
   return position === 'debut' ? `${bloc}\n\n${caption}` : `${caption}\n\n${bloc}`
+}
+
+/** Un lien tel qu'on le reconnait dans un texte : sans protocole ni casse. */
+function lienNu(lien: string): string {
+  return (lien ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/$/, '')
 }
 
 // ---------------------------------------------------------------------------

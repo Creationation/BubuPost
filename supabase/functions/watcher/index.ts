@@ -420,6 +420,25 @@ Deno.serve(async (req) => {
         })
       }
 
+      case 'deja-traites': {
+        // Un dossier qu'on ne remue pas est relu a chaque passage. Sans cette
+        // question prealable, chaque video repartait en upload toutes les
+        // soixante secondes pour s'entendre dire qu'elle etait deja la. Le
+        // journal des imports est la memoire : ce qui y est accepte ne
+        // revient pas, meme retire de la reserve entre-temps.
+        const cles = Array.isArray(body.cles) ? body.cles.map(String).slice(0, 500) : []
+        if (cles.length === 0) return json({ ok: true, traites: [] })
+
+        const { data, error } = await db
+          .from('imports')
+          .select('cle')
+          .eq('statut', 'importe')
+          .in('cle', cles)
+        if (error) return json({ error: error.message }, 500)
+
+        return json({ ok: true, traites: (data ?? []).map((l) => l.cle) })
+      }
+
       case 'tester-nom': {
         // Reserve a l'application : le watcher n'a rien a tester, il envoie.
         if (appelant !== 'app') return json({ error: 'Non autorise' }, 403)

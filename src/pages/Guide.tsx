@@ -543,9 +543,9 @@ export default function Guide() {
         </ul>
         <p className="mt-3 text-sm text-mist-500">
           Un tel dossier peut alimenter plusieurs marques d un coup : chaque video entre une fois
-          par marque, dans sa propre file. Le repere anti-doublon est le couple fichier plus
-          marque, donc relancer le watcher sur tout le dossier ne recree rien, et une marque
-          ajoutee plus tard rattrape l historique toute seule.
+          par marque, dans sa propre file. Une video acceptee une fois n est jamais relue, meme si
+          tu la retires ensuite de la reserve : relancer le watcher sur tout le dossier ne recree
+          rien.
         </p>
         <p className="mt-2 text-sm text-mist-500">
           L ordre suit la chronologie du tournage, pas l ordre alphabetique du disque : en JJMMAAAA,
@@ -577,13 +577,14 @@ export default function Guide() {
             clique sur <span className="text-mist-100">Activer l automatisation</span>.
           </Step>
           <Step n={5}>
-            Double-clique sur <Code>demarrer.bat</Code>. Une fenetre noire s ouvre et reste
-            ouverte : c est normal, c est le watcher qui tourne. La fermer l arrete.
+            Double-clique sur <Code>installer-demarrage.vbs</Code>. Une petite fenetre confirme :
+            le watcher tourne des maintenant, sans fenetre, et redemarrera tout seul a chaque
+            ouverture de session Windows. C est tout.
           </Step>
           <Step n={6}>
-            Pour qu il demarre tout seul avec Windows : appuie sur la touche Windows plus R, tape{' '}
-            <Code>shell:startup</Code>, valide, et glisse un raccourci de{' '}
-            <Code>demarrer.bat</Code> dans le dossier qui s ouvre.
+            Pour verifier : onglet Automatisation, la ligne Dernier passage doit dater de moins de
+            deux minutes. Si tu preferes le voir travailler, <Code>demarrer.bat</Code> l ouvre dans
+            une fenetre noire, mais alors ne lance pas les deux a la fois.
           </Step>
         </ol>
 

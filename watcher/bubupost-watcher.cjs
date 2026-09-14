@@ -310,6 +310,27 @@ function typeVideo(nom) {
 /** Compte les echecs consecutifs par fichier, pour ne pas alerter au premier. */
 const echecs = new Map()
 
+/** Par dossier, le nombre de fichiers deja traites annonce au dernier passage calme. */
+const calme = new Map()
+
+/**
+ * Les cles (chemin relatif et taille) que l'application a deja acceptees.
+ * Si la question echoue, on renvoie un ensemble vide : au pire on uploade
+ * pour rien, comme avant, plutot que de ne rien traiter.
+ */
+async function dejaTraites(local, cles) {
+  const traites = new Set()
+  for (let i = 0; i < cles.length; i += 200) {
+    try {
+      const r = await appeler(local, { action: 'deja-traites', cles: cles.slice(i, i + 200) })
+      for (const c of r.traites ?? []) traites.add(c)
+    } catch (e) {
+      souci(`Impossible de savoir ce qui est deja traite : ${e.message}`)
+    }
+  }
+  return traites
+}
+
 async function passage(local) {
   // Premier appel : on demande la configuration sans inventaire, puisqu'on ne
   // sait pas encore quels dossiers surveiller.
@@ -384,24 +405,54 @@ async function passage(local) {
       : ordonnes
     const ecartes = ordonnes.length - retenus.length
 
-    if (ecartes > 0) {
+    // Meme regle que plus bas : on ne le repete pas a chaque minute.
+    if (ecartes > 0 && calme.get(`${dossier.id}#avant`) !== ecartes) {
       info(
         `${ecartes} fichier(s) anterieurs au ${depuis} ignores, consideres comme deja publies.`,
       )
+      calme.set(`${dossier.id}#avant`, ecartes)
     }
     if (retenus.length === 0) continue
 
-    info(`${retenus.length} fichier(s) a traiter dans ${dossier.chemin}`)
+    // Un dossier qu'on ne remue pas est relu a chaque passage. On demande
+    // donc d'abord ce que l'application a deja accepte, au lieu d'uploader
+    // chaque video toutes les soixante secondes pour l'apprendre apres coup.
+    // La cle est celle du journal des imports : chemin relatif et taille.
+    const aTraiter = []
+    for (const x of retenus) {
+      const complet = path.join(dossier.chemin, x.f)
+      let taille
+      try {
+        taille = fs.statSync(complet).size
+      } catch {
+        continue
+      }
+      aTraiter.push({ fichier: x.f, complet, taille, cle: `${x.f}#${taille}` })
+    }
+    const traites = await dejaTraites(local, aTraiter.map((x) => x.cle))
+    const nouveaux = aTraiter.filter((x) => !traites.has(x.cle))
 
-    for (const { f: fichier } of retenus) {
-      const complet = path.join(dossier.chemin, fichier)
+    if (nouveaux.length === 0) {
+      // Une ligne par minute pour dire que rien n'a change remplirait le
+      // journal pour rien : on ne l'ecrit que quand le compte change.
+      if (calme.get(dossier.id) !== aTraiter.length) {
+        info(`${aTraiter.length} fichier(s) deja traites dans ${dossier.chemin}, rien de nouveau.`)
+        calme.set(dossier.id, aTraiter.length)
+      }
+      continue
+    }
+    calme.delete(dossier.id)
+    if (aTraiter.length > nouveaux.length) {
+      info(`${aTraiter.length - nouveaux.length} fichier(s) deja traites, ignores.`)
+    }
 
+    info(`${nouveaux.length} fichier(s) a traiter dans ${dossier.chemin}`)
+
+    for (const { fichier, complet, taille } of nouveaux) {
       if (!(await estStable(complet))) {
         info(`${fichier} : copie encore en cours, on attend le passage suivant.`)
         continue
       }
-
-      const taille = fs.statSync(complet).size
 
       try {
         info(`${fichier} : envoi de ${(taille / 1048576).toFixed(1)} Mo...`)
