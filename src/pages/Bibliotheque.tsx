@@ -769,6 +769,8 @@ function LigneVideo({
 }) {
   const [ouverte, setOuverte] = useState<string | null>(null)
   const premiere = entrees[0]
+  // Toujours le meme ordre de marques d une ligne a l autre : l oeil compare.
+  const parMarque = [...entrees].sort((a, b) => a.marque.localeCompare(b.marque))
   const creneau = creneauDeSource(premiere.source_cle)
   const toutesPrioritaires = entrees.every((v) => v.prioritaire)
   const toutesEnPause = entrees.every((v) => v.statut === 'en_pause')
@@ -823,7 +825,7 @@ function LigneVideo({
       </div>
 
       <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1 pl-6">
-        {entrees.map((v) => {
+        {parMarque.map((v) => {
           const prevision = previsions.get(v.id)
           const enPause = v.statut === 'en_pause'
           const estOuverte = ouverte === v.id
@@ -837,7 +839,7 @@ function LigneVideo({
                 onClick={() => setOuverte(estOuverte ? null : v.id)}
                 title="Cliquer pour regler cette marque seule"
               >
-                <span className="font-medium text-mist-200">{v.marque}</span>
+                <span className="font-medium text-mist-100">{v.marque}</span>
                 {enPause ? (
                   <span className="text-mist-500">en pause</span>
                 ) : prevision?.creneau ? (
