@@ -554,7 +554,8 @@ export default function Guide() {
           <Link to="/bibliotheque" className="text-brand-400 hover:underline">
             Reserve
           </Link>{' '}
-          a une vue "Par fichier source", avec une pastille par marque.
+          a une vue "Ou j en suis" : une ligne par video dans l ordre du tournage, et pour chaque
+          marque si elle est en file, programmee ou publiee.
         </p>
 
         <h3 className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wider text-mist-500">

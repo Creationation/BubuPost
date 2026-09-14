@@ -503,6 +503,7 @@ export type Database = {
       }
       sources_etat: {
         Row: {
+          etats: Json | null
           fichier: string | null
           marques: string[] | null
           marques_en_file: number | null
@@ -510,6 +511,7 @@ export type Database = {
           marques_ingerees: number | null
           marques_programmees: number | null
           publications_parties: number | null
+          rang: number | null
           source_cle: string | null
           statuts: string[] | null
           vue_le: string | null

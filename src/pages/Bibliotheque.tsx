@@ -5,17 +5,26 @@ import {
   lancerMoteur,
   listAccounts,
   listerBibliotheque,
+  listerDossiers,
   listerSources,
   lireConfigAuto,
   majVideo,
   programmerVideo,
   supprimerVideo,
+  type EtatMarque,
   type EtatReserve,
   type Prevision,
   type Source,
 } from '../lib/api'
 import { friendlyError } from '../lib/errors'
-import { normaliserConfig, type ConfigAuto, type Video } from '../lib/automatisation'
+import {
+  dateLisible,
+  journeesVues,
+  normaliserConfig,
+  type ConfigAuto,
+  type Dossier,
+  type Video,
+} from '../lib/automatisation'
 import { LANGUES, teinteLangue, langue as trouverLangue } from '../lib/langues'
 import { formatDateTime, toLocalInput, fromLocalInput } from '../lib/format'
 import { Alert, ConfirmModal, EmptyState, Loading, Modal, PageHeader } from '../components/ui'
@@ -36,6 +45,7 @@ export default function Bibliotheque() {
   const [filtreMarque, setFiltreMarque] = useState('')
   const [vue, setVue] = useState<'file' | 'sources'>('file')
   const [sources, setSources] = useState<Source[]>([])
+  const [dossiers, setDossiers] = useState<Dossier[]>([])
   const [enEdition, setEnEdition] = useState<Video | null>(null)
   const [aProgrammer, setAProgrammer] = useState<Video | null>(null)
   const [aSupprimer, setASupprimer] = useState<Video | null>(null)
@@ -48,14 +58,16 @@ export default function Bibliotheque() {
   const reload = useCallback(async () => {
     setLoading(true)
     try {
-      const [v, c, comptes, src] = await Promise.all([
+      const [v, c, comptes, src, d] = await Promise.all([
         listerBibliotheque(),
         lireConfigAuto(),
         listAccounts(),
         listerSources(),
+        listerDossiers(),
       ])
       setVideos(v)
       setSources(src)
+      setDossiers(d)
       setConfig(normaliserConfig(c))
       setMarques([...new Set(comptes.map((a) => a.brand))].filter(Boolean).sort())
       setError(null)
@@ -229,7 +241,7 @@ export default function Bibliotheque() {
           {(
             [
               { cle: 'file' as const, label: 'File d attente' },
-              { cle: 'sources' as const, label: 'Par fichier source' },
+              { cle: 'sources' as const, label: 'Ou j en suis' },
             ]
           ).map((o) => (
             <button
@@ -267,7 +279,7 @@ export default function Bibliotheque() {
       {loading ? (
         <Loading />
       ) : vue === 'sources' ? (
-        <VueSources sources={sources} filtreMarque={filtreMarque} />
+        <VueSources sources={sources} filtreMarque={filtreMarque} dossiers={dossiers} />
       ) : enFile.length === 0 ? (
         <EmptyState
           icon="▽"
@@ -470,8 +482,77 @@ export default function Bibliotheque() {
  * dossier de soixante-dix videos et trois marques, c'est la question qu'on se
  * pose vraiment avant de produire la suivante.
  */
-function VueSources({ sources, filtreMarque }: { sources: Source[]; filtreMarque: string }) {
+/** Ce qu une marque a fait d une video, en un mot et une couleur. */
+function etatMarque(e: EtatMarque): { libelle: string; teinte: string; detail: string } {
+  if (e.statut === 'en_pause') {
+    return { libelle: 'en pause', teinte: 'border-mist-500/30 bg-mist-500/10 text-mist-500', detail: 'mise de cote' }
+  }
+  if (e.statut === 'en_file') {
+    return { libelle: 'en file', teinte: 'border-warn-400/30 bg-warn-400/10 text-warn-400', detail: 'attend son creneau' }
+  }
+  // Programmee : ce que la campagne est devenue.
+  if (e.total > 0 && e.publiees === e.total) {
+    return { libelle: 'publiee', teinte: 'border-ok-400/30 bg-ok-400/10 text-ok-400', detail: `${e.publiees} publication(s) parties` }
+  }
+  if (e.echecs > 0 && e.en_attente === 0) {
+    return { libelle: 'echec', teinte: 'border-bad-400/30 bg-bad-400/10 text-bad-400', detail: `${e.echecs} en echec, ${e.publiees} parties` }
+  }
+  if (e.publiees > 0) {
+    return { libelle: 'en cours', teinte: 'border-brand-400/30 bg-brand-400/10 text-brand-400', detail: `${e.publiees} sur ${e.total} parties` }
+  }
+  return {
+    libelle: 'programmee',
+    teinte: 'border-brand-400/30 bg-brand-400/10 text-brand-400',
+    detail: e.programmee_pour ? `le ${formatDateTime(e.programmee_pour)}` : 'campagne creee',
+  }
+}
+
+/** « 28/07/2026, matin » depuis une cle 28072026/1_matin/... */
+function lireCle(cle: string): { date: string; creneau: string } {
+  const parties = cle.split(/[\\/]+/)
+  const m = parties[0]?.match(/^(\d{2})(\d{2})(\d{4})$/)
+  const date = m ? `${m[1]}/${m[2]}/${m[3]}` : parties[0] ?? cle
+  const c = (parties[1] ?? '').replace(/^\d+_/, '').replace(/_/g, ' ')
+  const creneau = c === 'apres midi' ? 'apres-midi' : c
+  return { date, creneau }
+}
+
+/**
+ * Ou j en suis, fichier par fichier, dans l ordre du tournage.
+ *
+ * Trois zones : ce qui precede le point de depart (publie a la main, avant
+ * l application, on ne le relit pas), ce qui est entre et ce qu il en est
+ * advenu marque par marque, et les totaux au-dessus pour ne pas avoir a
+ * compter.
+ */
+function VueSources({
+  sources,
+  filtreMarque,
+  dossiers,
+}: {
+  sources: Source[]
+  filtreMarque: string
+  dossiers: Dossier[]
+}) {
   const [recherche, setRecherche] = useState('')
+  const [voirAvant, setVoirAvant] = useState(false)
+
+  // Le point de depart et l inventaire viennent du dossier source. S il y en
+  // a plusieurs, on prend le plus ancien point de depart : c est la borne
+  // la plus prudente pour dire « avant ca, rien n est a nous ».
+  const depart = useMemo(() => {
+    const dates = dossiers.map((d) => d.depuis_date).filter((x): x is string => Boolean(x))
+    return dates.length ? dates.sort()[0] : null
+  }, [dossiers])
+
+  const avant = useMemo(() => {
+    if (!depart) return []
+    return dossiers
+      .flatMap((d) => journeesVues(d.inventaire))
+      .filter((j) => j.date < depart)
+      .sort((a, b) => a.date.localeCompare(b.date))
+  }, [dossiers, depart])
+  const videosAvant = avant.reduce((n, j) => n + j.videos, 0)
 
   const visibles = useMemo(() => {
     const q = recherche.trim().toLowerCase()
@@ -482,12 +563,24 @@ function VueSources({ sources, filtreMarque }: { sources: Source[]; filtreMarque
     })
   }, [sources, filtreMarque, recherche])
 
-  const total = sources.length
-  const toutesParties = sources.filter(
-    (s) => s.marques_programmees === s.marques_ingerees && s.marques_ingerees > 0,
-  ).length
+  // Totaux sur ce qui est entre, marque par marque confondues.
+  const totaux = useMemo(() => {
+    const t = { publiees: 0, programmees: 0, enFile: 0, enPause: 0, echecs: 0 }
+    for (const s of sources) {
+      for (const e of s.etats) {
+        if (filtreMarque && e.marque !== filtreMarque) continue
+        const l = etatMarque(e).libelle
+        if (l === 'publiee') t.publiees++
+        else if (l === 'en file') t.enFile++
+        else if (l === 'en pause') t.enPause++
+        else if (l === 'echec') t.echecs++
+        else t.programmees++
+      }
+    }
+    return t
+  }, [sources, filtreMarque])
 
-  if (total === 0) {
+  if (sources.length === 0 && videosAvant === 0) {
     return (
       <EmptyState
         icon="▤"
@@ -501,68 +594,100 @@ function VueSources({ sources, filtreMarque }: { sources: Source[]; filtreMarque
     <div>
       <div className="panel mb-4 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-mist-300">
-            <span className="font-semibold text-mist-100">{total}</span> fichier
-            {total > 1 ? 's' : ''} vu{total > 1 ? 's' : ''},{' '}
-            <span className="font-semibold text-ok-400">{toutesParties}</span> entierement
-            programme{toutesParties > 1 ? 's' : ''} sur toutes leurs marques.
-          </p>
+          <div className="text-sm text-mist-300">
+            <p>
+              <span className="font-semibold text-mist-100">{sources.length}</span> video
+              {sources.length > 1 ? 's' : ''} depuis le point de depart
+              {depart && <> ({dateLisible(depart)})</>}.
+            </p>
+            <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+              <span className="text-ok-400">{totaux.publiees} publiee(s)</span>
+              <span className="text-brand-400">{totaux.programmees} programmee(s)</span>
+              <span className="text-warn-400">{totaux.enFile} en file</span>
+              {totaux.enPause > 0 && <span className="text-mist-500">{totaux.enPause} en pause</span>}
+              {totaux.echecs > 0 && <span className="text-bad-400">{totaux.echecs} en echec</span>}
+              <span className="text-mist-600">(une video compte une fois par marque)</span>
+            </p>
+          </div>
           <input
             className="field !w-auto font-mono text-xs"
             value={recherche}
             onChange={(e) => setRecherche(e.target.value)}
-            placeholder="chercher un chemin, une date..."
+            placeholder="chercher une date, ex. 0708"
           />
         </div>
       </div>
 
-      <ul className="space-y-2">
-        {visibles.map((s) => (
-          <li key={s.source_cle} className="panel p-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-mono text-xs text-mist-100" title={s.source_cle}>
-                  {s.source_cle}
-                </p>
-                <p className="mt-1 text-xs text-mist-600">
-                  vue le {formatDateTime(s.vue_le)}
-                  {s.publications_parties > 0 &&
-                    ` · ${s.publications_parties} publication(s) deja partie(s)`}
-                </p>
-              </div>
+      {videosAvant > 0 && depart && (
+        <div className="panel mb-4 p-3">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-3 text-left"
+            onClick={() => setVoirAvant((v) => !v)}
+            aria-expanded={voirAvant}
+          >
+            <span className="text-sm text-mist-300">
+              <span className="font-semibold text-mist-100">{videosAvant}</span> video
+              {videosAvant > 1 ? 's' : ''} avant le {dateLisible(depart)}, publiee
+              {videosAvant > 1 ? 's' : ''} a la main avant l application. Elles ne seront jamais
+              relues.
+            </span>
+            <span className="text-xs text-mist-500">{voirAvant ? 'replier' : 'voir les journees'}</span>
+          </button>
+          {voirAvant && (
+            <ul className="mt-3 flex flex-wrap gap-1.5">
+              {avant.map((j) => (
+                <li key={j.dossier} className="chip border-ink-700 bg-ink-850 text-mist-500" title={dateLisible(j.date)}>
+                  {j.dossier} · {j.videos}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-2 text-xs text-mist-600">
+            Pour en reprendre certaines : Auto, onglet Dossiers, recule le point de depart.
+          </p>
+        </div>
+      )}
 
-              <div className="flex shrink-0 flex-wrap gap-1.5">
-                {s.marques.map((m, i) => {
-                  const statut = s.statuts[i]
-                  const teinte =
-                    statut === 'programmee'
-                      ? 'border-ok-400/30 bg-ok-400/10 text-ok-400'
-                      : statut === 'en_pause'
-                        ? 'border-mist-500/30 bg-mist-500/10 text-mist-500'
-                        : 'border-warn-400/30 bg-warn-400/10 text-warn-400'
-                  const libelle =
-                    statut === 'programmee'
-                      ? 'programmee'
-                      : statut === 'en_pause'
-                        ? 'en pause'
-                        : 'en file'
-                  return (
-                    <span
-                      key={m}
-                      className={`chip ${teinte}`}
-                      title={`${m} : ${libelle}`}
-                    >
-                      {m}
-                    </span>
-                  )
-                })}
+      <ul className="space-y-2">
+        {visibles.map((s) => {
+          const lu = lireCle(s.source_cle)
+          return (
+            <li key={s.source_cle} className="panel p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-mist-100">
+                    {lu.date}
+                    {lu.creneau && <span className="text-mist-400"> · {lu.creneau}</span>}
+                  </p>
+                  <p className="mt-0.5 truncate font-mono text-[11px] text-mist-600" title={s.source_cle}>
+                    {s.source_cle}
+                  </p>
+                </div>
+
+                <div className="flex shrink-0 flex-wrap gap-1.5">
+                  {s.etats
+                    .filter((e) => !filtreMarque || e.marque === filtreMarque)
+                    .map((e) => {
+                      const etat = etatMarque(e)
+                      return (
+                        <span
+                          key={e.marque}
+                          className={`chip ${etat.teinte}`}
+                          title={`${e.marque} : ${etat.libelle}, ${etat.detail}`}
+                        >
+                          {e.marque} · {etat.libelle}
+                        </span>
+                      )
+                    })}
+                </div>
               </div>
-            </div>
-          </li>
-        ))}
+            </li>
+          )
+        })}
       </ul>
 
-      {visibles.length === 0 && (
+      {visibles.length === 0 && sources.length > 0 && (
         <p className="py-8 text-center text-sm text-mist-500">
           Rien ne correspond a cette recherche.
         </p>

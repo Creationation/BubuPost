@@ -427,7 +427,7 @@ export async function dejaProgramme(
   // On compte les CAMPAGNES, pas les publications : la cadence se pense en
   // videos par jour, pas en lignes dans posts.
   const campagnes = new Map<string, string>()
-  for (const p of (data ?? []) as Array<{
+  for (const p of (data ?? []) as unknown as Array<{
     campaign_id: string | null
     scheduled_at: string
     accounts: { brand: string }

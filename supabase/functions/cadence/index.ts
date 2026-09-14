@@ -19,6 +19,7 @@ import {
   creneauxLibres,
   dejaProgramme,
   type Config,
+  type Creneau,
   type EntreeBibliotheque,
 } from '../_shared/automatisation.ts'
 
@@ -239,9 +240,14 @@ async function passage(db: SupabaseClient, config: Config, forcer: boolean) {
   const resultats: Array<Record<string, unknown>> = []
   let creees = 0
 
-  for (const marque of await marquesEnFile(db)) {
-    if (creees >= MAX_PAR_PASSAGE) break
+  // Chaque marque prepare sa file et ses creneaux, puis on sert UNE video par
+  // marque et par tour. Servir une marque jusqu'au plafond avant de passer a
+  // la suivante laissait EdgeSyncFX sans rien tant que CosmicSucces n'avait
+  // pas rempli ses trois jours d'horizon.
+  type Tour = { marque: string; attente: EntreeBibliotheque[]; creneaux: Creneau[]; i: number }
+  const tours: Tour[] = []
 
+  for (const marque of await marquesEnFile(db)) {
     const attente = await file(db, marque)
     if (attente.length === 0) continue
 
@@ -251,12 +257,26 @@ async function passage(db: SupabaseClient, config: Config, forcer: boolean) {
       deja,
       marque,
       maintenant,
-      Math.min(attente.length, MAX_PAR_PASSAGE - creees),
+      Math.min(attente.length, MAX_PAR_PASSAGE),
       horizon,
     )
+    if (creneaux.length === 0) continue
+    tours.push({ marque, attente, creneaux, i: 0 })
+  }
 
-    for (let i = 0; i < creneaux.length && creees < MAX_PAR_PASSAGE; i++) {
-      const entree = attente[i]
+  let progres = true
+  while (creees < MAX_PAR_PASSAGE && progres) {
+    progres = false
+
+    for (const tour of tours) {
+      if (creees >= MAX_PAR_PASSAGE) break
+      if (tour.i >= tour.creneaux.length || tour.i >= tour.attente.length) continue
+
+      const { marque } = tour
+      const entree = tour.attente[tour.i]
+      const quand = tour.creneaux[tour.i].quand
+      tour.i++
+      progres = true
 
       // Verrou : on sort l'entree de la file AVANT de creer la campagne. Deux
       // passages qui se chevauchent ne doivent pas programmer deux fois la
@@ -270,22 +290,12 @@ async function passage(db: SupabaseClient, config: Config, forcer: boolean) {
 
       if (!reservee || reservee.length === 0) continue
 
-      const resultat = await creerCampagne(
-        db,
-        SUPABASE_URL,
-        SERVICE_KEY,
-        entree,
-        config,
-        creneaux[i].quand,
-      )
+      const resultat = await creerCampagne(db, SUPABASE_URL, SERVICE_KEY, entree, config, quand)
 
       if (!resultat.ok) {
         // On la remet en file, a sa place : l'echec vient de la generation ou
         // d'un quota, pas de la video. Elle repassera au prochain tour.
-        await db
-          .from('bibliotheque')
-          .update({ statut: 'en_file' })
-          .eq('id', entree.id)
+        await db.from('bibliotheque').update({ statut: 'en_file' }).eq('id', entree.id)
         resultats.push({ marque, fichier: entree.fichier, echec: resultat.erreur })
         continue
       }
@@ -397,12 +407,24 @@ Deno.serve(async (req) => {
           .update({ campaign_id: resultat.campaign_id, programmee_pour: resultat.premiere })
           .eq('id', id)
 
-        return json({ ok: true, ...resultat })
+        return json(resultat)
       }
 
       case 'moteur':
-      default:
-        return json(await passage(db, config, body.forcer === true))
+      default: {
+        // Un seul passage a la fois. Le cron et le bouton de l'application
+        // peuvent tomber a la meme seconde ; sans ce bail, les deux lisent
+        // les memes creneaux libres et les remplissent chacun de leur cote.
+        const { data: pris } = await db.rpc('prendre_verrou_moteur')
+        if (!pris) {
+          return json({ ok: true, ignore: 'un passage est deja en cours', creees: 0 })
+        }
+        try {
+          return json(await passage(db, config, body.forcer === true))
+        } finally {
+          await db.rpc('liberer_verrou_moteur')
+        }
+      }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

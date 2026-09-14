@@ -735,10 +735,23 @@ export async function rejouerImport(id: string): Promise<void> {
  * C'est la vue qui repond a « ou j'en suis » sur un dossier de 77 videos, et
  * a « est-ce que celle-la est deja partie quelque part ».
  */
+/** L etat d une video pour UNE marque : ou en est sa campagne. */
+export type EtatMarque = {
+  marque: string
+  statut: string
+  programmee_pour: string | null
+  total: number
+  publiees: number
+  echecs: number
+  en_attente: number
+}
+
 export type Source = {
   source_cle: string
   fichier: string
   vue_le: string
+  /** Rang chronologique : l ordre du tournage, pas celui du disque. */
+  rang: number
   marques_ingerees: number
   marques: string[]
   statuts: string[]
@@ -746,18 +759,32 @@ export type Source = {
   marques_en_file: number
   marques_en_pause: number
   publications_parties: number
+  etats: EtatMarque[]
 }
 
 export async function listerSources(): Promise<Source[]> {
   // Postgres declare toutes les colonnes d'une vue comme nullables, ce qu'un
   // group by rend faux en pratique : source_cle est la cle de regroupement.
   const lignes = unwrap(
-    await supabase.from('sources_etat').select('*').order('source_cle', { ascending: false }),
+    await supabase.from('sources_etat').select('*').order('rang', { ascending: true }),
   )
   return lignes.map((l) => ({
     source_cle: l.source_cle ?? '',
     fichier: l.fichier ?? '',
     vue_le: l.vue_le ?? '',
+    rang: Number(l.rang ?? 0),
+    etats: (Array.isArray(l.etats) ? l.etats : []).map((e) => {
+      const x = (e ?? {}) as Record<string, unknown>
+      return {
+        marque: String(x.marque ?? ''),
+        statut: String(x.statut ?? ''),
+        programmee_pour: typeof x.programmee_pour === 'string' ? x.programmee_pour : null,
+        total: Number(x.total ?? 0),
+        publiees: Number(x.publiees ?? 0),
+        echecs: Number(x.echecs ?? 0),
+        en_attente: Number(x.en_attente ?? 0),
+      }
+    }),
     marques_ingerees: Number(l.marques_ingerees ?? 0),
     marques: l.marques ?? [],
     statuts: l.statuts ?? [],
