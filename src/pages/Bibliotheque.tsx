@@ -297,6 +297,43 @@ export default function Bibliotheque() {
         </span>
       </div>
 
+      {!loading && vue === 'file' && programmees.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-mist-500">
+            Ce qui part en premier
+            <span className="ml-2 font-normal normal-case text-mist-600">
+              {programmees.length} campagne{programmees.length > 1 ? 's' : ''} deja creee{programmees.length > 1 ? 's' : ''}, dans l ordre de depart
+            </span>
+          </h2>
+          <div className="space-y-5">
+            {programmeesParJour.map((bloc) => (
+              <div key={bloc.cle || 'sans-date'}>
+                <h3 className="mb-2 text-xs font-semibold capitalize text-mist-400">
+                  {bloc.cle ? formatDay(bloc.items[0].programmee_pour as string) : 'Sans date'}
+                  <span className="ml-2 font-normal normal-case text-mist-600">
+                    {bloc.items.length} campagne{bloc.items.length > 1 ? 's' : ''}
+                  </span>
+                </h3>
+                <ul className="space-y-2">
+                  {bloc.items.map((v) => (
+                    <li key={v.id} className="panel flex flex-wrap items-center gap-3 p-3">
+                      <span className="w-12 shrink-0 text-sm tabular-nums text-mist-300">
+                        {v.programmee_pour ? formatTime(v.programmee_pour) : ''}
+                      </span>
+                      <span className="text-xs text-ok-400">✓</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm">{v.sujet}</span>
+                        <span className="block text-xs text-mist-600">{v.marque}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {loading ? (
         <Loading />
       ) : vue === 'sources' ? (
@@ -314,6 +351,14 @@ export default function Bibliotheque() {
         />
       ) : (
         <div className="space-y-6">
+          {programmees.length > 0 && (
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-mist-500">
+              Ensuite, en attente
+              <span className="ml-2 font-normal normal-case text-mist-600">
+                le moteur les prend dans cet ordre, une journee de tournage apres l autre
+              </span>
+            </h2>
+          )}
           {fileParJour.map((jour) => (
             <section key={jour.cle || 'sans-date'}>
               <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-mist-500">
@@ -373,40 +418,6 @@ export default function Bibliotheque() {
             </section>
           ))}
         </div>
-      )}
-
-      {vue === 'file' && programmees.length > 0 && (
-        <section className="mt-8">
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-mist-500">
-            Deja programmees
-          </h2>
-          <div className="space-y-5">
-            {programmeesParJour.map((bloc) => (
-              <div key={bloc.cle || 'sans-date'}>
-                <h3 className="mb-2 text-xs font-semibold capitalize text-mist-400">
-                  {bloc.cle ? formatDay(bloc.items[0].programmee_pour as string) : 'Sans date'}
-                  <span className="ml-2 font-normal normal-case text-mist-600">
-                    {bloc.items.length} campagne{bloc.items.length > 1 ? 's' : ''}
-                  </span>
-                </h3>
-                <ul className="space-y-2">
-                  {bloc.items.map((v) => (
-                    <li key={v.id} className="panel flex flex-wrap items-center gap-3 p-3">
-                      <span className="w-12 shrink-0 text-sm tabular-nums text-mist-300">
-                        {v.programmee_pour ? formatTime(v.programmee_pour) : ''}
-                      </span>
-                      <span className="text-xs text-ok-400">✓</span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm">{v.sujet}</span>
-                        <span className="block text-xs text-mist-600">{v.marque}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </section>
       )}
 
       <EditerVideo
