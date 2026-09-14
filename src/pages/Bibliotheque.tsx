@@ -28,7 +28,7 @@ import {
   type Dossier,
   type Video,
 } from '../lib/automatisation'
-import { LANGUES, teinteLangue, langue as trouverLangue } from '../lib/langues'
+import { LANGUES } from '../lib/langues'
 import { formatDateTime, formatDay, formatTime, toLocalInput, fromLocalInput } from '../lib/format'
 import { Alert, ConfirmModal, EmptyState, Loading, Modal, PageHeader } from '../components/ui'
 import { LecteurVideo } from '../components/Video'
@@ -50,12 +50,13 @@ export default function Bibliotheque() {
   const [sources, setSources] = useState<Source[]>([])
   const [dossiers, setDossiers] = useState<Dossier[]>([])
   const [enEdition, setEnEdition] = useState<Video | null>(null)
-  const [aProgrammer, setAProgrammer] = useState<Video | null>(null)
-  const [aSupprimer, setASupprimer] = useState<Video | null>(null)
+  const [aProgrammer, setAProgrammer] = useState<Video[] | null>(null)
+  const [aSupprimer, setASupprimer] = useState<Video[] | null>(null)
+  const [aVoir, setAVoir] = useState<Video | null>(null)
 
-  // La video en cours de glissement. Une ref plutot qu'un etat : rien ici n'a
-  // besoin d'un rendu a chaque mouvement de souris.
-  const glisse = useRef<Video | null>(null)
+  // La video en cours de glissement, avec toutes ses marques. Une ref plutot
+  // qu'un etat : rien ici n'a besoin d'un rendu a chaque mouvement de souris.
+  const glisse = useRef<Video[] | null>(null)
   const [survole, setSurvole] = useState<string | null>(null)
 
   const reload = useCallback(async () => {
@@ -133,11 +134,14 @@ export default function Bibliotheque() {
     [videos, filtreMarque],
   )
 
-  /** La file, par journee de tournage : un bloc par jour, matin puis soir. */
-  const fileParJour = useMemo(
-    () => parBlocs(enFile, (v) => dateDeSource(v.source_cle) ?? ''),
-    [enFile],
-  )
+  /**
+   * La file, une ligne par VIDEO : ses marques sont dessous, pas en trois
+   * cartes qui repetent le meme fichier. Puis un bloc par journee de tournage.
+   */
+  const fileParJour = useMemo(() => {
+    const groupes = parBlocs(enFile, (v) => v.source_cle ?? v.id)
+    return parBlocs(groupes, (g) => dateDeSource(g.items[0].source_cle) ?? '')
+  }, [enFile])
 
   /** Les programmees, par jour de publication. */
   const programmeesParJour = useMemo(
@@ -149,35 +153,29 @@ export default function Bibliotheque() {
 
   // ---- glisser-deposer ----------------------------------------------------
 
-  async function deposer(cible: Video) {
+  async function deposer(cible: Video[]) {
     const source = glisse.current
     glisse.current = null
     setSurvole(null)
-    if (!source || source.id === cible.id) return
+    if (!source || source[0].id === cible[0].id) return
 
-    if (source.marque !== cible.marque) {
-      setError(
-        "On ne reordonne qu'a l'interieur d'une marque : chaque marque a sa propre file et sa propre cadence.",
-      )
-      return
-    }
-
-    // On se place JUSTE AVANT la cible : c'est ce qu'on attend en lachant sur
-    // une ligne. Le rang devient la moyenne entre elle et celle d'au-dessus.
-    const memeMarque = enFile.filter((v) => v.marque === cible.marque)
-    const index = memeMarque.findIndex((v) => v.id === cible.id)
-    const precedente = memeMarque[index - 1]
-
-    await agir(
-      () =>
-        deplacerVideo(
-          source.id,
-          source.marque,
-          precedente ? precedente.rang : null,
-          cible.rang,
-        ),
-      'File reordonnee',
-    )
+    // Chaque marque a sa propre file : on place chaque entree de la video
+    // JUSTE AVANT l entree de meme marque de la cible. Si la cible n a pas
+    // cette marque, on prend la premiere entree de la cible comme repere.
+    await agir(async () => {
+      for (const entree of source) {
+        const repere = cible.find((c) => c.marque === entree.marque) ?? cible[0]
+        const memeMarque = enFile.filter((v) => v.marque === entree.marque)
+        const index = memeMarque.findIndex((v) => v.id === repere.id)
+        const precedente = index > 0 ? memeMarque[index - 1] : undefined
+        await deplacerVideo(
+          entree.id,
+          entree.marque,
+          precedente && precedente.id !== entree.id ? precedente.rang : null,
+          repere.rang,
+        )
+      }
+    }, 'File reordonnee')
   }
 
   const seuilBas = reserve.filter((r) => r.reste <= r.seuil)
@@ -315,138 +313,66 @@ export default function Bibliotheque() {
           hint="Depose des videos dans un dossier surveille : le watcher les ajoutera ici, et tu decideras de leur ordre."
         />
       ) : (
-        <ul className="space-y-3">
-          {fileParJour.flatMap((bloc) => [
-            <li key={'jour-' + bloc.cle} className="pt-2 first:pt-0">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-mist-500">
-                {bloc.cle ? `Tournage du ${dateLisible(bloc.cle)}` : 'Sans date de tournage'}
+        <div className="space-y-6">
+          {fileParJour.map((jour) => (
+            <section key={jour.cle || 'sans-date'}>
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-mist-500">
+                {jour.cle ? `Tournage du ${dateLisible(jour.cle)}` : 'Sans date de tournage'}
                 <span className="ml-2 font-normal normal-case text-mist-600">
-                  {bloc.items.length} video{bloc.items.length > 1 ? 's' : ''}
+                  {jour.items.length} video{jour.items.length > 1 ? 's' : ''}
                 </span>
               </h2>
-            </li>,
-            ...bloc.items.map((v) => {
-            const prevision = parId.get(v.id)
-            const enPause = v.statut === 'en_pause'
-            return (
-              <li
-                key={v.id}
-                draggable
-                onDragStart={() => {
-                  glisse.current = v
-                }}
-                onDragOver={(e) => {
-                  if (!glisse.current) return
-                  e.preventDefault()
-                  if (survole !== v.id) setSurvole(v.id)
-                }}
-                onDragLeave={() => setSurvole((s) => (s === v.id ? null : s))}
-                onDrop={(e) => {
-                  e.preventDefault()
-                  void deposer(v)
-                }}
-                className={`panel cursor-grab p-4 transition-colors active:cursor-grabbing ${
-                  survole === v.id ? 'ring-1 ring-brand-500/50' : ''
-                } ${enPause ? 'opacity-60' : ''} ${
-                  v.prioritaire ? 'border-l-4 border-l-warn-400' : ''
-                }`}
-              >
-                <div className="flex flex-wrap gap-4">
-                  <div className="w-32 shrink-0">
-                    <LecteurVideo url={v.video_url} compact />
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-mist-600">⠿</span>
-                      <span className="text-sm font-semibold">{v.marque}</span>
-                      <span className={`chip ${teinteLangue(v.langue ?? 'fr')}`}>
-                        {trouverLangue(v.langue).badge}
-                      </span>
-                      {v.prioritaire && (
-                        <span className="chip border-warn-400/30 bg-warn-400/10 text-warn-400">
-                          ★ prioritaire
-                        </span>
-                      )}
-                      {enPause && (
-                        <span className="chip border-mist-500/30 bg-mist-500/10 text-mist-500">
-                          en pause
-                        </span>
-                      )}
-                      {v.profil && <span className="text-xs text-mist-600">{v.profil}</span>}
-                    </div>
-
-                    <p className="mt-1.5 text-sm text-mist-100">{v.sujet}</p>
-                    <p className="mt-0.5 truncate text-xs text-mist-600" title={v.fichier}>
-                      {v.fichier} · ajoutee le {formatDateTime(v.created_at)}
-                    </p>
-
-                    <p className="mt-2 text-xs">
-                      {enPause ? (
-                        <span className="text-mist-600">
-                          En reserve, le moteur ne la piochera pas.
-                        </span>
-                      ) : prevision?.creneau ? (
-                        <span className="text-ok-400">
-                          Prevue le {formatDateTime(prevision.creneau)}
-                        </span>
-                      ) : (
-                        <span className="text-warn-400">
-                          Pas de creneau libre en vue : la cadence est pleine pour les jours a
-                          venir.
-                        </span>
-                      )}
-                    </p>
-                  </div>
-
-                  <div className="flex shrink-0 flex-col gap-1.5">
-                    <button
-                      className="btn btn-ghost !py-1 !text-xs"
-                      onClick={() =>
-                        void agir(
-                          () => majVideo(v.id, { prioritaire: !v.prioritaire }),
-                          v.prioritaire ? 'Priorite retiree' : 'Video passee prioritaire',
-                        )
-                      }
-                    >
-                      {v.prioritaire ? 'Retirer la priorite' : 'Prioritaire'}
-                    </button>
-                    <button
-                      className="btn btn-ghost !py-1 !text-xs"
-                      onClick={() =>
-                        void agir(
-                          () => majVideo(v.id, { statut: enPause ? 'en_file' : 'en_pause' }),
-                          enPause ? 'Video remise en file' : 'Video mise en reserve',
-                        )
-                      }
-                    >
-                      {enPause ? 'Remettre en file' : 'Mettre en pause'}
-                    </button>
-                    <button
-                      className="btn btn-ghost !py-1 !text-xs"
-                      onClick={() => setEnEdition(v)}
-                    >
-                      Modifier
-                    </button>
-                    <button
-                      className="btn btn-ghost !py-1 !text-xs"
-                      onClick={() => setAProgrammer(v)}
-                    >
-                      Programmer
-                    </button>
-                    <button
-                      className="btn btn-danger !py-1 !text-xs"
-                      onClick={() => setASupprimer(v)}
-                    >
-                      Retirer
-                    </button>
-                  </div>
-                </div>
-              </li>
-            )
-            }),
-          ])}
-        </ul>
+              <ul className="space-y-2">
+                {jour.items.map((groupe) => (
+                  <LigneVideo
+                    key={groupe.cle}
+                    entrees={groupe.items}
+                    previsions={parId}
+                    survolee={survole === groupe.cle}
+                    onDragStart={() => {
+                      glisse.current = groupe.items
+                    }}
+                    onDragOver={(e) => {
+                      if (!glisse.current) return
+                      e.preventDefault()
+                      if (survole !== groupe.cle) setSurvole(groupe.cle)
+                    }}
+                    onDragLeave={() => setSurvole((x) => (x === groupe.cle ? null : x))}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      void deposer(groupe.items)
+                    }}
+                    onVoir={() => setAVoir(groupe.items[0])}
+                    onPrioritaire={() => {
+                      const toutes = groupe.items.every((v) => v.prioritaire)
+                      void agir(async () => {
+                        for (const v of groupe.items) await majVideo(v.id, { prioritaire: !toutes })
+                      }, toutes ? 'Priorite retiree' : 'Video passee prioritaire')
+                    }}
+                    onPause={() => {
+                      const toutesEnPause = groupe.items.every((v) => v.statut === 'en_pause')
+                      void agir(async () => {
+                        for (const v of groupe.items) {
+                          await majVideo(v.id, { statut: toutesEnPause ? 'en_file' : 'en_pause' })
+                        }
+                      }, toutesEnPause ? 'Video remise en file' : 'Video mise en pause')
+                    }}
+                    onProgrammer={() => setAProgrammer(groupe.items)}
+                    onRetirer={() => setASupprimer(groupe.items)}
+                    onPauseMarque={(v) =>
+                      void agir(
+                        () => majVideo(v.id, { statut: v.statut === 'en_pause' ? 'en_file' : 'en_pause' }),
+                        v.statut === 'en_pause' ? `${v.marque} remise en file` : `${v.marque} mise en pause`,
+                      )
+                    }
+                    onModifierMarque={(v) => setEnEdition(v)}
+                    onRetirerMarque={(v) => setASupprimer([v])}
+                  />
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
       )}
 
       {vue === 'file' && programmees.length > 0 && (
@@ -495,24 +421,43 @@ export default function Bibliotheque() {
       />
 
       <ProgrammerVideo
-        video={aProgrammer}
+        video={aProgrammer?.[0] ?? null}
+        marques={aProgrammer?.map((v) => v.marque) ?? []}
         onClose={() => setAProgrammer(null)}
-        onProgrammer={(id, quand) => {
+        onProgrammer={(_id, quand) => {
+          const groupe = aProgrammer ?? []
           setAProgrammer(null)
           void agir(async () => {
-            await programmerVideo(id, quand)
-          }, 'Campagne creee a la date choisie')
+            for (const v of groupe) await programmerVideo(v.id, quand)
+          }, groupe.length > 1 ? `${groupe.length} campagnes creees a la date choisie` : 'Campagne creee a la date choisie')
         }}
       />
 
+      <Modal open={aVoir !== null} onClose={() => setAVoir(null)} title={aVoir?.sujet ?? ''}>
+        {aVoir && (
+          <div className="mx-auto max-w-sm">
+            <LecteurVideo url={aVoir.video_url} />
+            <p className="mt-2 text-center text-xs text-mist-600">{aVoir.fichier}</p>
+          </div>
+        )}
+      </Modal>
+
       <ConfirmModal
         open={aSupprimer !== null}
-        title="Retirer cette video de la file"
+        title={
+          aSupprimer && aSupprimer.length > 1
+            ? 'Retirer cette video de la file, pour toutes ses marques'
+            : `Retirer cette video de la file${aSupprimer?.[0] ? ` pour ${aSupprimer[0].marque}` : ''}`
+        }
         message="Elle sort de la file et ne sera pas programmee. Elle reste visible dans « Ou j en suis », marquee retiree, d ou tu peux la remettre en file."
         confirmLabel="Retirer"
         danger
         onConfirm={() => {
-          if (aSupprimer) void agir(() => supprimerVideo(aSupprimer.id), 'Video retiree')
+          const groupe = aSupprimer ?? []
+          if (groupe.length === 0) return
+          void agir(async () => {
+            for (const v of groupe) await supprimerVideo(v.id)
+          }, 'Video retiree')
         }}
         onClose={() => setASupprimer(null)}
       />
@@ -772,6 +717,157 @@ function VueSources({
   )
 }
 
+/** « Matin », « Apres-midi », « Soir » depuis une cle 28072026/1_matin/... */
+function creneauDeSource(cle: string | null | undefined): string {
+  const partie = (cle ?? '').split(/[\\/]+/)[1] ?? ''
+  const c = partie.replace(/^\d+_/, '').replace(/_/g, ' ')
+  if (!c) return ''
+  const lisible = c === 'apres midi' ? 'apres-midi' : c
+  return lisible.charAt(0).toUpperCase() + lisible.slice(1)
+}
+
+/**
+ * Une video de la file, avec ses marques.
+ *
+ * Trois cartes de 250 pixels pour un meme fichier, avec trois lecteurs
+ * video, ne disaient rien de plus que cette ligne : le fichier, quand il
+ * partira pour chaque marque, et les actions. Les actions du haut valent
+ * pour toutes les marques ; une marque se regle seule en cliquant dessus.
+ */
+function LigneVideo({
+  entrees,
+  previsions,
+  survolee,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onVoir,
+  onPrioritaire,
+  onPause,
+  onProgrammer,
+  onRetirer,
+  onPauseMarque,
+  onModifierMarque,
+  onRetirerMarque,
+}: {
+  entrees: Video[]
+  previsions: Map<string, Prevision>
+  survolee: boolean
+  onDragStart: () => void
+  onDragOver: (e: React.DragEvent) => void
+  onDragLeave: () => void
+  onDrop: (e: React.DragEvent) => void
+  onVoir: () => void
+  onPrioritaire: () => void
+  onPause: () => void
+  onProgrammer: () => void
+  onRetirer: () => void
+  onPauseMarque: (v: Video) => void
+  onModifierMarque: (v: Video) => void
+  onRetirerMarque: (v: Video) => void
+}) {
+  const [ouverte, setOuverte] = useState<string | null>(null)
+  const premiere = entrees[0]
+  const creneau = creneauDeSource(premiere.source_cle)
+  const toutesPrioritaires = entrees.every((v) => v.prioritaire)
+  const toutesEnPause = entrees.every((v) => v.statut === 'en_pause')
+  const unePrioritaire = entrees.some((v) => v.prioritaire)
+
+  return (
+    <li
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className={`panel cursor-grab px-4 py-3 transition-colors active:cursor-grabbing ${
+        survolee ? 'ring-1 ring-brand-500/50' : ''
+      } ${toutesEnPause ? 'opacity-60' : ''} ${unePrioritaire ? 'border-l-4 border-l-warn-400' : ''}`}
+    >
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-xs text-mist-600" aria-hidden="true">⠿</span>
+        <button
+          type="button"
+          className="btn btn-ghost !px-2 !py-1 !text-xs"
+          onClick={onVoir}
+          title="Voir la video"
+        >
+          ▶ Voir
+        </button>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-mist-100">
+            {creneau || premiere.sujet}
+            {unePrioritaire && (
+              <span className="ml-2 chip border-warn-400/30 bg-warn-400/10 text-warn-400">★ prioritaire</span>
+            )}
+          </p>
+          <p className="truncate text-xs text-mist-600" title={premiere.fichier}>
+            {premiere.fichier}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-1.5">
+          <button className="btn btn-ghost !py-1 !text-xs" onClick={onPrioritaire}>
+            {toutesPrioritaires ? 'Retirer la priorite' : 'Prioritaire'}
+          </button>
+          <button className="btn btn-ghost !py-1 !text-xs" onClick={onPause}>
+            {toutesEnPause ? 'Remettre en file' : 'Mettre en pause'}
+          </button>
+          <button className="btn btn-ghost !py-1 !text-xs" onClick={onProgrammer}>
+            Programmer
+          </button>
+          <button className="btn btn-danger !py-1 !text-xs" onClick={onRetirer}>
+            Retirer
+          </button>
+        </div>
+      </div>
+
+      <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1 pl-6">
+        {entrees.map((v) => {
+          const prevision = previsions.get(v.id)
+          const enPause = v.statut === 'en_pause'
+          const estOuverte = ouverte === v.id
+          return (
+            <li key={v.id} className="text-xs">
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-ink-800 ${
+                  estOuverte ? 'bg-ink-800' : ''
+                }`}
+                onClick={() => setOuverte(estOuverte ? null : v.id)}
+                title="Cliquer pour regler cette marque seule"
+              >
+                <span className="font-medium text-mist-200">{v.marque}</span>
+                {enPause ? (
+                  <span className="text-mist-500">en pause</span>
+                ) : prevision?.creneau ? (
+                  <span className="text-ok-400">{formatDateTime(prevision.creneau)}</span>
+                ) : (
+                  <span className="text-warn-400">pas de creneau en vue</span>
+                )}
+                {v.prioritaire && <span className="text-warn-400">★</span>}
+              </button>
+              {estOuverte && (
+                <span className="ml-1 inline-flex gap-1">
+                  <button className="btn btn-ghost !px-2 !py-0.5 !text-[11px]" onClick={() => onPauseMarque(v)}>
+                    {enPause ? 'Remettre en file' : 'Pause'}
+                  </button>
+                  <button className="btn btn-ghost !px-2 !py-0.5 !text-[11px]" onClick={() => onModifierMarque(v)}>
+                    Modifier
+                  </button>
+                  <button className="btn btn-danger !px-2 !py-0.5 !text-[11px]" onClick={() => onRetirerMarque(v)}>
+                    Retirer
+                  </button>
+                </span>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </li>
+  )
+}
+
 /**
  * Corriger ce que le nom du fichier disait mal.
  *
@@ -902,10 +998,13 @@ function EditerVideo({
 /** Sortir une video de la file pour la placer a une date precise. */
 function ProgrammerVideo({
   video,
+  marques,
   onClose,
   onProgrammer,
 }: {
   video: Video | null
+  /** Les marques concernees : une campagne par marque, a la meme heure. */
+  marques: string[]
   onClose: () => void
   onProgrammer: (id: string, quand: string) => void
 }) {
@@ -930,6 +1029,12 @@ function ProgrammerVideo({
       <p className="text-sm text-mist-300">
         <span className="font-medium text-mist-100">{video.sujet}</span>
       </p>
+      {marques.length > 0 && (
+        <p className="mt-1 text-xs text-mist-500">
+          Pour {marques.join(', ')} : {marques.length > 1 ? 'une campagne par marque, ' : 'une campagne, '}
+          a la meme heure.
+        </p>
+      )}
       <p className="mt-1 text-sm text-mist-500">
         La campagne est creee tout de suite, a la date que tu choisis. La video sort de la file
         automatique : le moteur ne la piochera plus.
