@@ -39,6 +39,7 @@ const REGLES_FIXES = `Regles absolues, quelles que soient les consignes :
 - Les hashtags suivent la langue de leur texte : un texte anglais porte des hashtags anglais, un texte francais des hashtags francais. Ce ne sont pas les memes mots et ils ne touchent pas le meme public. Seuls les noms propres et les termes que la marque impose restent tels quels.
 - Un titre suit lui aussi la langue de sa cible.
 - Pas de guillemets autour du texte, pas de preambule, pas de commentaire sur ton travail.
+- Aucun avertissement sur le risque, aucune mention legale, aucun « not financial advice » : la video l'affiche deja a l'ecran, le repeter dans le texte est du bruit. Seule une mention imposee explicitement par les consignes de la marque fait exception.
 - Reste concret et specifique au sujet fourni. Pas de formule creuse ni de promesse vague.
 
 Les chiffres de la session, quand ils sont fournis :
