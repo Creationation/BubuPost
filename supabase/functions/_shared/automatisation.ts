@@ -4,6 +4,7 @@
 // creneau finiraient par diverger, et l'apercu mentirait au moment precis ou
 // on compte dessus. Il n'y a donc qu'une implementation, ici.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2'
+import { decrireMetriques, type Metriques } from './metriques.ts'
 
 export const JOURS = ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam']
 
@@ -63,6 +64,8 @@ export type EntreeBibliotheque = {
   rang: number
   prioritaire: boolean
   statut: string
+  /** Ce qui a ete lu sur la derniere image de la video, si on l a. */
+  metriques?: Metriques | null
 }
 
 // ---------------------------------------------------------------------------
@@ -593,6 +596,51 @@ export type Resultat = {
  * Le creneau est fourni par l'appelant : c'est le moteur qui decide QUAND,
  * cette fonction decide seulement COMMENT.
  */
+export type TexteGenere = { id: string; caption: string; hashtags: string[]; title?: string }
+
+/**
+ * Les textes d une video pour un jeu de comptes, en UN appel.
+ *
+ * Les chiffres lus en fin de video partent avec le sujet : c est ce qui
+ * permet au texte de citer un profit ou un drawdown vrai au lieu d une
+ * formule.
+ */
+export async function genererTextes(
+  supabaseUrl: string,
+  serviceKey: string,
+  entree: EntreeBibliotheque,
+  cibles: Compte[],
+): Promise<{ ok: true; parId: Map<string, TexteGenere> } | { ok: false; erreur: string }> {
+  const langueDe = (c: Compte) => entree.langue || c.language || 'fr'
+
+  const generation = await fetch(`${supabaseUrl}/functions/v1/generate-caption`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      subject: entree.sujet,
+      donnees: decrireMetriques(entree.metriques),
+      targets: cibles.map((c) => ({
+        id: c.id,
+        platform: c.platform,
+        brand: c.brand,
+        account_name: c.account_name,
+        language: langueDe(c),
+        youtube_type: c.platform === 'youtube' ? 'short' : undefined,
+      })),
+    }),
+  })
+
+  const textes = await generation.json().catch(() => ({}))
+  if (!generation.ok || !Array.isArray(textes.results)) {
+    return { ok: false, erreur: `Generation impossible : ${textes.error ?? generation.status}` }
+  }
+
+  return {
+    ok: true,
+    parId: new Map((textes.results as TexteGenere[]).map((r) => [r.id, r])),
+  }
+}
+
 export async function creerCampagne(
   db: SupabaseClient,
   supabaseUrl: string,
@@ -642,31 +690,9 @@ export async function creerCampagne(
 
   const langueDe = (c: Compte) => entree.langue || c.language || 'fr'
 
-  const generation = await fetch(`${supabaseUrl}/functions/v1/generate-caption`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      subject: entree.sujet,
-      targets: cibles.map((c) => ({
-        id: c.id,
-        platform: c.platform,
-        brand: c.brand,
-        account_name: c.account_name,
-        language: langueDe(c),
-        youtube_type: c.platform === 'youtube' ? 'short' : undefined,
-      })),
-    }),
-  })
-
-  const textes = await generation.json().catch(() => ({}))
-  if (!generation.ok || !Array.isArray(textes.results)) {
-    return { ok: false, erreur: `Generation impossible : ${textes.error ?? generation.status}` }
-  }
-
-  const parId = new Map(
-    (textes.results as Array<{ id: string; caption: string; hashtags: string[]; title?: string }>)
-      .map((r) => [r.id, r]),
-  )
+  const generes = await genererTextes(supabaseUrl, serviceKey, entree, cibles)
+  if (!generes.ok) return { ok: false, erreur: generes.erreur }
+  const parId = generes.parId
 
   const { count: rang } = await db
     .from('posts')

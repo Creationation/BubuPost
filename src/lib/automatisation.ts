@@ -64,6 +64,32 @@ export function parBlocs<T>(liste: T[], cleDe: (x: T) => string): { cle: string;
   return blocs
 }
 
+/**
+ * Les chiffres lus a la fin d une video, en une ligne.
+ *
+ * « Jour +92,43 USD · Total +2 221,04 USD · DD jour -258,88 USD · Spread 21 pts »
+ * Une chaine vide s il n y a rien.
+ */
+export function resumeMetriques(brut: unknown): string {
+  if (!brut || typeof brut !== 'object') return ''
+  const m = brut as Record<string, unknown>
+  const devise = typeof m.devise === 'string' ? m.devise : ''
+  const montant = (v: unknown) => {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return null
+    const signe = v > 0 ? '+' : v < 0 ? '-' : ''
+    return `${signe}${Math.abs(v).toLocaleString('fr-FR', { maximumFractionDigits: 2 })}${devise ? ' ' + devise : ''}`
+  }
+  const parts: string[] = []
+  const jour = montant(m.profit_jour)
+  const total = montant(m.profit_total)
+  const dd = montant(m.dd_max_jour)
+  if (jour) parts.push(`Jour ${jour}`)
+  if (total) parts.push(`Total ${total}`)
+  if (dd) parts.push(`DD jour ${dd}`)
+  if (typeof m.spread_pts === 'number') parts.push(`Spread ${m.spread_pts} pts`)
+  return parts.join(' · ')
+}
+
 /** « 7 septembre 2026 », depuis une date AAAA-MM-JJ. */
 export function dateLisible(iso: string): string {
   const [a, m, j] = iso.split('-')

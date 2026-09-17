@@ -22,7 +22,9 @@
  */
 
 const fs = require('fs')
+const os = require('os')
 const path = require('path')
+const { execFileSync } = require('child_process')
 
 const VERSION = '1.0.0'
 const CONFIG = path.join(__dirname, 'config.json')
@@ -86,6 +88,8 @@ function lireConfigLocale() {
     sousDossierTraite: brut.sousDossierTraite || 'traite',
     // Nombre d'echecs consecutifs sur un meme fichier avant d'alerter.
     echecsAvantAlerte: Number(brut.echecsAvantAlerte) || 3,
+    // Chemin de ffmpeg si le script ne le trouve pas seul.
+    ffmpeg: brut.ffmpeg ? String(brut.ffmpeg) : '',
   }
 }
 
@@ -298,9 +302,71 @@ async function deposer(local, cheminFichier, nomFichier) {
 
 function typeVideo(nom) {
   const n = nom.toLowerCase()
+  if (n.endsWith('.jpg') || n.endsWith('.jpeg')) return 'image/jpeg'
   if (n.endsWith('.mov')) return 'video/quicktime'
   if (n.endsWith('.m4v')) return 'video/x-m4v'
   return 'video/mp4'
+}
+
+// ---------------------------------------------------------------------------
+// La derniere image
+//
+// Chaque Reel se termine sur le tableau de bord de la session : profit du
+// jour, profit total, drawdown, spread. On l'envoie a cote de la video, et
+// l'application y lit les chiffres que les textes citeront.
+// ---------------------------------------------------------------------------
+
+let ffmpegConnu
+
+/** Le chemin de ffmpeg : config.json, le PATH, ou l'installation winget. */
+function trouverFfmpeg(local) {
+  if (ffmpegConnu !== undefined) return ffmpegConnu
+  const candidats = []
+  if (local.ffmpeg) candidats.push(local.ffmpeg)
+  candidats.push('ffmpeg')
+  const winget = path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'WinGet', 'Packages')
+  try {
+    for (const paquet of fs.readdirSync(winget)) {
+      if (!/ffmpeg/i.test(paquet)) continue
+      for (const version of fs.readdirSync(path.join(winget, paquet))) {
+        const exe = path.join(winget, paquet, version, 'bin', 'ffmpeg.exe')
+        if (fs.existsSync(exe)) candidats.push(exe)
+      }
+    }
+  } catch {
+    // Pas de winget ici, ce n'est pas grave.
+  }
+  for (const c of candidats) {
+    try {
+      execFileSync(c, ['-version'], { stdio: 'ignore', timeout: 10000 })
+      ffmpegConnu = c
+      return c
+    } catch {
+      // Suivant.
+    }
+  }
+  ffmpegConnu = null
+  souci('ffmpeg introuvable : les videos entrent sans leurs chiffres de session.')
+  souci('   Indique son chemin dans config.json, cle "ffmpeg".')
+  return null
+}
+
+/** Extrait la derniere seconde de la video en JPEG. Null si impossible. */
+function derniereImage(local, cheminVideo) {
+  const ffmpeg = trouverFfmpeg(local)
+  if (!ffmpeg) return null
+  const sortie = path.join(os.tmpdir(), `bubupost-fin-${process.pid}-${Date.now()}.jpg`)
+  try {
+    execFileSync(
+      ffmpeg,
+      ['-sseof', '-1', '-i', cheminVideo, '-update', '1', '-frames:v', '1', '-q:v', '2', '-y', sortie],
+      { stdio: 'ignore', timeout: 60000 },
+    )
+    return fs.existsSync(sortie) && fs.statSync(sortie).size > 0 ? sortie : null
+  } catch (e) {
+    souci(`   derniere image illisible : ${e.message}`)
+    return null
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -458,6 +524,24 @@ async function passage(local) {
         info(`${fichier} : envoi de ${(taille / 1048576).toFixed(1)} Mo...`)
         const videoUrl = await deposer(local, complet, fichier)
 
+        // La derniere image part a cote. Si elle manque, la video entre
+        // quand meme : un texte sans chiffres vaut mieux qu'une video bloquee.
+        let imageFinUrl
+        const image = derniereImage(local, complet)
+        if (image) {
+          try {
+            imageFinUrl = await deposer(local, image, path.basename(fichier).replace(/\.[^.]+$/, '') + '-fin.jpg')
+          } catch (e) {
+            souci(`   derniere image non envoyee : ${e.message}`)
+          } finally {
+            try {
+              fs.unlinkSync(image)
+            } catch {
+              // Un fichier temporaire qui reste n'est pas un probleme.
+            }
+          }
+        }
+
         const resultat = await appeler(local, {
           action: 'ingest',
           fichier: path.basename(fichier),
@@ -465,6 +549,7 @@ async function passage(local) {
           dossier: dossier.chemin,
           taille,
           video_url: videoUrl,
+          image_fin_url: imageFinUrl,
           marque: dossier.marque || undefined,
           marques: dossier.marques?.length ? dossier.marques : undefined,
           profil: dossier.profil || undefined,

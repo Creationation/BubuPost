@@ -104,8 +104,10 @@ export type Database = {
           created_at: string
           fichier: string
           id: string
+          image_fin: string | null
           langue: string | null
           marque: string
+          metriques: Json | null
           prioritaire: boolean
           profil: string | null
           programmee_pour: string | null
@@ -122,8 +124,10 @@ export type Database = {
           created_at?: string
           fichier: string
           id?: string
+          image_fin?: string | null
           langue?: string | null
           marque: string
+          metriques?: Json | null
           prioritaire?: boolean
           profil?: string | null
           programmee_pour?: string | null
@@ -140,8 +144,10 @@ export type Database = {
           created_at?: string
           fichier?: string
           id?: string
+          image_fin?: string | null
           langue?: string | null
           marque?: string
+          metriques?: Json | null
           prioritaire?: boolean
           profil?: string | null
           programmee_pour?: string | null
@@ -525,6 +531,11 @@ export type Database = {
         Returns: number
       }
       is_admin: { Args: never; Returns: boolean }
+      liberer_verrou_moteur: { Args: never; Returns: undefined }
+      prendre_verrou_moteur: {
+        Args: { p_ttl_secondes?: number }
+        Returns: boolean
+      }
       quota_du_jour: { Args: { p_platform: string }; Returns: number }
       rang_suivant: { Args: { p_marque: string }; Returns: number }
       renumeroter_bibliotheque: { Args: { p_marque: string }; Returns: number }

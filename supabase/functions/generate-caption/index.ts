@@ -39,7 +39,21 @@ const REGLES_FIXES = `Regles absolues, quelles que soient les consignes :
 - Les hashtags suivent la langue de leur texte : un texte anglais porte des hashtags anglais, un texte francais des hashtags francais. Ce ne sont pas les memes mots et ils ne touchent pas le meme public. Seuls les noms propres et les termes que la marque impose restent tels quels.
 - Un titre suit lui aussi la langue de sa cible.
 - Pas de guillemets autour du texte, pas de preambule, pas de commentaire sur ton travail.
-- Reste concret et specifique au sujet fourni. Pas de formule creuse ni de promesse vague.`
+- Reste concret et specifique au sujet fourni. Pas de formule creuse ni de promesse vague.
+
+Les chiffres de la session, quand ils sont fournis :
+- Ils viennent du tableau de bord affiche a la fin de la video. Cites-en deux ou trois, les plus parlants pour ce texte, EXACTEMENT tels qu'ils sont donnes : ni arrondi, ni conversion, ni chiffre invente. Un chiffre non fourni n'existe pas.
+- Le profit se dit avec son drawdown ou son spread a cote : un gain sans son risque est de la publicite, un gain avec son risque est une information. C'est ce qui rend le texte credible.
+- Ne cite pas tout : un texte qui aligne dix valeurs est un releve de compte, pas une legende.
+
+Comment parler de l'EA :
+- Il se presente par ce qu'il a fait dans cette session, jamais par des superlatifs. Pas de « meilleur », pas de « incroyable », pas de promesse de gains futurs, pas de pression a acheter.
+- Le but est d'attiser la curiosite : montrer un resultat precis, nommer ce qui l'a produit (les regles, la gestion du risque, la discipline mecanique), et laisser une question ouverte. Le lecteur doit avoir envie d'en savoir plus, pas se sentir demarche.
+- Ton authentique, comme quelqu'un qui montre sa propre session : premiere personne autorisee, phrases de longueurs variees, une observation concrete plutot qu'un slogan. Rien de robotique, rien de copie-colle.
+
+Referencement :
+- Emploie naturellement, dans le corps du texte, les termes que les gens cherchent sur ce sujet : forex trading, gold trading ou XAUUSD si c'est l'instrument, expert advisor, automated trading, MetaTrader 5, drawdown, risk management. Un ou deux par texte, dans des phrases qui tiennent debout, jamais en liste de mots-cles.
+- Les hashtags completent ce vocabulaire : melange de termes larges (trading, forex) et de termes precis (xauusd, expertadvisor, mt5).`
 
 const FORMAT_SIMPLE = `Tu reponds uniquement par un objet JSON valide, sans bloc de code autour, de la forme :
 {"caption": "le texte", "hashtags": ["motcle"], "title": "titre ou chaine vide"}
@@ -86,12 +100,13 @@ type Cible = {
 
 type Body = {
   subject?: string
+  /** Les chiffres lus en fin de video, deja mis en phrase. */
+  donnees?: string
   platform?: string
   brand?: string
   language?: string
   tone?: string
   youtube_type?: 'short' | 'video'
-  language?: string
   /** Mode lot : une variante distincte par cible. */
   targets?: Cible[]
 }
@@ -387,8 +402,10 @@ Deno.serve(async (req) => {
     return json({ error: 'Le sujet est obligatoire' }, 400)
   }
 
+  const donnees = (body.donnees ?? '').trim()
   const contexte = [
     subject ? `Sujet de la video : ${subject}` : '',
+    donnees ? `Chiffres de la session, lus sur le tableau de bord a la fin de la video : ${donnees}.` : '',
     tone ? `Ton demande pour cette video en particulier : ${tone}` : '',
   ].filter(Boolean)
 

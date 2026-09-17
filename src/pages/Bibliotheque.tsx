@@ -23,6 +23,7 @@ import {
   dateLisible,
   journeesVues,
   parBlocs,
+  resumeMetriques,
   normaliserConfig,
   type ConfigAuto,
   type Dossier,
@@ -328,7 +329,10 @@ export default function Bibliotheque() {
                       <span className="text-xs text-ok-400">✓</span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm">{v.sujet}</span>
-                        <span className="block text-xs text-mist-600">{v.marque}</span>
+                        <span className="block text-xs text-mist-600">
+                          {v.marque}
+                          {resumeMetriques(v.metriques) && <> · {resumeMetriques(v.metriques)}</>}
+                        </span>
                       </span>
                     </li>
                   ))}
@@ -822,6 +826,11 @@ function LigneVideo({
           </p>
           <p className="truncate text-xs text-mist-600" title={premiere.fichier}>
             {premiere.fichier}
+            {resumeMetriques(premiere.metriques) && (
+              <span className="ml-2 text-mist-500" title="Lu sur le tableau de bord, a la fin de la video">
+                {resumeMetriques(premiere.metriques)}
+              </span>
+            )}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-1.5">

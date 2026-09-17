@@ -14,8 +14,12 @@ import { corsHeaders, json } from '../_shared/cors.ts'
 import { jwtRole } from '../_shared/auth.ts'
 import { notifyTelegram } from '../_shared/notify.ts'
 import {
+  assembler,
+  choisirCta,
   cleJour,
   creerCampagne,
+  genererTextes,
+  type Compte,
   creneauxLibres,
   dejaProgramme,
   type Config,
@@ -45,7 +49,7 @@ async function lireConfig(db: SupabaseClient): Promise<Config> {
 async function file(db: SupabaseClient, marque?: string): Promise<EntreeBibliotheque[]> {
   let requete = db
     .from('bibliotheque')
-    .select('id, video_url, fichier, marque, sujet, langue, profil, rang, prioritaire, statut')
+    .select('id, video_url, fichier, marque, sujet, langue, profil, rang, prioritaire, statut, metriques')
     .eq('statut', 'en_file')
     .order('prioritaire', { ascending: false })
     .order('rang', { ascending: true })
@@ -370,6 +374,57 @@ Deno.serve(async (req) => {
       case 'apercu':
         return json({ ok: true, previsions: await apercu(db, config), reserve: await etatReserve(db, config) })
 
+      case 'retexter': {
+        // Reecrire les textes d une campagne pas encore partie, sans toucher
+        // a ses dates : quand les consignes changent, ou quand les chiffres
+        // de la video viennent d etre lus.
+        const campaignId = String(body.campaign_id ?? '')
+        if (!campaignId) return json({ error: 'campaign_id est obligatoire' }, 400)
+
+        const { data: entree } = await db
+          .from('bibliotheque')
+          .select('id, video_url, fichier, marque, sujet, langue, profil, rang, prioritaire, statut, metriques')
+          .eq('campaign_id', campaignId)
+          .maybeSingle()
+        if (!entree) return json({ error: 'Aucune video de la reserve pour cette campagne' }, 404)
+
+        const { data: posts } = await db
+          .from('posts')
+          .select('id, account_id, status, accounts!inner(id, platform, brand, account_name, language, status)')
+          .eq('campaign_id', campaignId)
+          .in('status', ['pending', 'a_valider'])
+        const lignes = (posts ?? []) as unknown as Array<{ id: string; accounts: Compte }>
+        if (lignes.length === 0) return json({ ok: true, reecrits: 0, raison: 'rien en attente' })
+
+        const cibles = lignes.map((l) => l.accounts)
+        const generes = await genererTextes(SUPABASE_URL, SERVICE_KEY, entree as EntreeBibliotheque, cibles)
+        if (!generes.ok) return json({ error: generes.erreur }, 502)
+
+        const { count: rang } = await db
+          .from('posts')
+          .select('id', { count: 'exact', head: true })
+          .not('campaign_id', 'is', null)
+
+        let reecrits = 0
+        for (const [i, l] of lignes.entries()) {
+          const texte = generes.parId.get(l.accounts.id)
+          if (!texte) continue
+          const cta = choisirCta(config.contenu, entree.marque, l.accounts.platform, (rang ?? 0) + i)
+          const lien = config.contenu?.liens?.[entree.marque]?.[l.accounts.platform] ?? ''
+          const { error } = await db
+            .from('posts')
+            .update({
+              caption: assembler(texte.caption ?? '', cta, lien, config.contenu?.position ?? 'fin'),
+              hashtags: texte.hashtags?.length ? texte.hashtags : null,
+              title: l.accounts.platform === 'youtube' ? (texte.title ?? null) : null,
+            })
+            .eq('id', l.id)
+            .in('status', ['pending', 'a_valider'])
+          if (!error) reecrits++
+        }
+        return json({ ok: true, reecrits })
+      }
+
       case 'manuelle': {
         // Programmation explicite d'une video, hors cadence. C'est une decision
         // editoriale : elle ne consomme pas de creneau, elle en cree un.
@@ -382,7 +437,7 @@ Deno.serve(async (req) => {
           .update({ statut: 'programmee' })
           .eq('id', id)
           .in('statut', ['en_file', 'en_pause'])
-          .select('id, video_url, fichier, marque, sujet, langue, profil, rang, prioritaire, statut')
+          .select('id, video_url, fichier, marque, sujet, langue, profil, rang, prioritaire, statut, metriques')
 
         if (!entrees || entrees.length === 0) {
           return json({ error: 'Cette video est deja programmee, ou introuvable' }, 409)

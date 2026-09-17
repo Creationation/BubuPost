@@ -35,11 +35,13 @@ import {
   sujetDepuisChemin,
   type Config,
 } from '../_shared/automatisation.ts'
+import { lireMetriques, type Metriques } from '../_shared/metriques.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 const WATCHER_TOKEN = Deno.env.get('WATCHER_TOKEN') ?? ''
+const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? ''
 
 async function lireConfig(db: SupabaseClient): Promise<Config> {
   const { data } = await db.from('automation_config').select('reglages').eq('id', true).single()
@@ -80,6 +82,8 @@ type CorpsIngestion = {
   chemin_relatif?: string
   mode_nommage?: 'champs' | 'chemin'
   modele_sujet?: string
+  /** La derniere image de la video, deposee a cote : le tableau de bord. */
+  image_fin_url?: string
 }
 
 async function ingerer(db: SupabaseClient, body: CorpsIngestion) {
@@ -225,6 +229,18 @@ async function ingerer(db: SupabaseClient, body: CorpsIngestion) {
     })
   }
 
+  // Les chiffres de la session, lus une fois pour toutes les marques. Si la
+  // lecture echoue, la video entre quand meme : un texte sans chiffres vaut
+  // mieux qu une video qui ne part pas.
+  let metriques: Metriques | null = null
+  if (body.image_fin_url && ANTHROPIC_KEY) {
+    try {
+      metriques = await lireMetriques(ANTHROPIC_KEY, body.image_fin_url)
+    } catch (e) {
+      console.error('lecture des metriques impossible', e instanceof Error ? e.message : e)
+    }
+  }
+
   // Une entree par marque. L'index unique (source_cle, marque) fait le reste :
   // rejouer le dossier entier ne cree rien, et une marque ajoutee plus tard
   // rattrape son retard toute seule.
@@ -262,6 +278,8 @@ async function ingerer(db: SupabaseClient, body: CorpsIngestion) {
       profil: body.profil ?? null,
       rang,
       statut: 'en_file',
+      image_fin: body.image_fin_url ?? null,
+      metriques,
     })
 
     // Course entre deux passages : l'index unique a tranche, ce n'est pas une
@@ -418,6 +436,24 @@ Deno.serve(async (req) => {
           token: data.token,
           video_url: db.storage.from('videos').getPublicUrl(chemin).data.publicUrl,
         })
+      }
+
+      case 'metriques': {
+        // Relire (ou lire apres coup) le tableau de bord d une video deja en
+        // reserve, pour toutes ses marques.
+        const sourceCle = String(body.source_cle ?? '')
+        const imageUrl = String(body.image_fin_url ?? '')
+        if (!sourceCle || !imageUrl) return json({ error: 'source_cle et image_fin_url sont obligatoires' }, 400)
+        if (!ANTHROPIC_KEY) return json({ error: 'Secret ANTHROPIC_API_KEY absent' }, 500)
+
+        const lues = await lireMetriques(ANTHROPIC_KEY, imageUrl)
+        const { data, error } = await db
+          .from('bibliotheque')
+          .update({ image_fin: imageUrl, metriques: lues })
+          .eq('source_cle', sourceCle)
+          .select('id')
+        if (error) return json({ error: error.message }, 500)
+        return json({ ok: true, lignes: data?.length ?? 0, metriques: lues })
       }
 
       case 'deja-traites': {
