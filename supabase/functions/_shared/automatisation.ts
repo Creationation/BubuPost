@@ -348,12 +348,27 @@ function minutesDepuisMinuit(hhmm: string): number {
 
 export type Creneau = { quand: Date; jour: string }
 
+/** Par jour civil de Paris, les instants (ms) ou une campagne commence deja. */
+export type Occupation = Record<string, number[]>
+
+/**
+ * Deux campagnes sont « au meme creneau » si elles commencent a moins d une
+ * demi-heure l une de l autre. Une campagne posee a la main a 9h10 occupe
+ * le creneau de 9h, elle ne s y ajoute pas.
+ */
+const MEME_CRENEAU_MS = 30 * 60_000
+
 /**
  * Les prochains creneaux libres d'une marque, dans l'ordre.
  *
- * Un jour porte au maximum la cadence prevue pour ce jour de la semaine. Les
- * publications deja programmees comptent : c'est ce qui evite de remplir deux
- * fois le meme jour a deux passages du moteur.
+ * Un jour porte au maximum la cadence prevue pour ce jour de la semaine, et
+ * chaque creneau a une HEURE : 9h, 13h, 17h pour trois par jour. Un creneau
+ * est libre si son heure n est pas passee, si rien n y commence deja, et si
+ * le jour n a pas atteint son plafond, campagnes parties comprises.
+ *
+ * Compter au lieu de nommer les heures a fait publier trois videos a 17h :
+ * la campagne de 9h, partie, ne comptait plus, et celle de 17h comptait pour
+ * la place de 13h. Voir le 15 septembre 2026.
  *
  * `combien` creneaux sont rendus, ou moins si l'horizon est atteint. Rendre
  * moins que demande est une information : cela veut dire que la cadence ne
@@ -361,7 +376,7 @@ export type Creneau = { quand: Date; jour: string }
  */
 export function creneauxLibres(
   cadence: Config['cadence'],
-  dejaParJour: Record<string, number>,
+  deja: Occupation,
   marque: string,
   depuis: Date,
   combien: number,
@@ -374,9 +389,10 @@ export function creneauxLibres(
   const debut = minutesDepuisMinuit(cadence.plage?.debut ?? '09:00')
   const fin = minutesDepuisMinuit(cadence.plage?.fin ?? '21:00')
 
-  // Copie locale : on ne modifie pas le compteur de l'appelant, qui peut
+  // Copie locale : on ne modifie pas l occupation de l'appelant, qui peut
   // vouloir rejouer le calcul pour une autre marque.
-  const occupe = { ...dejaParJour }
+  const occupe: Occupation = {}
+  for (const [jour, instants] of Object.entries(deja)) occupe[jour] = [...instants]
 
   // Le point de depart, en date civile de Paris. Les jours suivants
   // s'obtiennent en avancant cette date, pas l'instant : un jour civil ne
@@ -389,44 +405,57 @@ export function creneauxLibres(
 
     const cle = cleJour(minuit)
     const plafond = parMarque[JOURS[cible.jourSemaine]] ?? 0
+    if (plafond <= 0) continue
 
-    while (sortie.length < combien && (occupe[cle] ?? 0) < plafond) {
-      const rang = occupe[cle] ?? 0
-      // Les publications du jour se repartissent dans la plage autorisee.
-      const pas = plafond > 1 ? (fin - debut) / plafond : 0
+    const pris = occupe[cle] ?? (occupe[cle] = [])
+    // Les publications du jour se repartissent dans la plage autorisee.
+    const pas = plafond > 1 ? (fin - debut) / plafond : 0
+
+    for (let rang = 0; rang < plafond && sortie.length < combien; rang++) {
+      if (pris.length >= plafond) break
+
       const minute = Math.round(debut + pas * rang)
-
       const quand = instant(cible.annee, cible.mois, cible.jour, Math.floor(minute / 60), minute % 60)
 
-      // Un creneau deja passe ne sert a rien : on le compte comme occupe et on
-      // continue, plutot que de programmer dans le passe.
-      if (quand.getTime() <= depuis.getTime()) {
-        occupe[cle] = rang + 1
-        continue
-      }
+      // Un creneau passe ne sert a rien : on ne programme pas dans le passe.
+      if (quand.getTime() <= depuis.getTime()) continue
+      // Une campagne y commence deja, partie ou non : il est pris.
+      if (pris.some((t) => Math.abs(t - quand.getTime()) < MEME_CRENEAU_MS)) continue
 
       sortie.push({ quand, jour: cle })
-      occupe[cle] = rang + 1
+      pris.push(quand.getTime())
     }
   }
 
   return sortie
 }
 
-/** Ce qui est deja programme, par jour, pour une marque. */
+/**
+ * Ce qui occupe deja les jours a venir, pour une marque : par jour civil, les
+ * instants ou une campagne commence.
+ *
+ * Tous les statuts comptent sauf annule. Une campagne PARTIE occupe toujours
+ * son creneau : ne compter que ce qui reste a venir faisait croire, a 9h30,
+ * que le jour n avait plus qu une campagne. Et on part du debut de la
+ * journee, pas de maintenant, pour la meme raison.
+ */
 export async function dejaProgramme(
   db: SupabaseClient,
   marque: string,
-): Promise<Record<string, number>> {
+): Promise<Occupation> {
+  const c = civil(new Date())
+  const debutDuJour = instant(c.annee, c.mois, c.jour, 0, 0)
+
   const { data } = await db
     .from('posts')
     .select('campaign_id, scheduled_at, accounts!inner(brand)')
-    .in('status', ['a_valider', 'pending', 'processing'])
-    .gte('scheduled_at', new Date().toISOString())
+    .neq('status', 'cancelled')
+    .gte('scheduled_at', debutDuJour.toISOString())
 
   // On compte les CAMPAGNES, pas les publications : la cadence se pense en
-  // videos par jour, pas en lignes dans posts.
-  const campagnes = new Map<string, string>()
+  // videos par jour, pas en lignes dans posts. Le debut d une campagne est
+  // sa premiere publication.
+  const campagnes = new Map<string, number>()
   for (const p of (data ?? []) as unknown as Array<{
     campaign_id: string | null
     scheduled_at: string
@@ -434,11 +463,16 @@ export async function dejaProgramme(
   }>) {
     if (p.accounts?.brand !== marque) continue
     const cle = p.campaign_id ?? p.scheduled_at
-    if (!campagnes.has(cle)) campagnes.set(cle, cleJour(new Date(p.scheduled_at)))
+    const t = new Date(p.scheduled_at).getTime()
+    const actuel = campagnes.get(cle)
+    if (actuel === undefined || t < actuel) campagnes.set(cle, t)
   }
 
-  const parJour: Record<string, number> = {}
-  for (const jour of campagnes.values()) parJour[jour] = (parJour[jour] ?? 0) + 1
+  const parJour: Occupation = {}
+  for (const t of campagnes.values()) {
+    const jour = cleJour(new Date(t))
+    ;(parJour[jour] ?? (parJour[jour] = [])).push(t)
+  }
   return parJour
 }
 

@@ -317,7 +317,12 @@ function GrilleMois({
           const horsMois = jour.getMonth() !== moisAffiche
           const estAujourdhui = cle === cleAujourdhui
           const deplie = depliees.has(cle)
-          const visibles = deplie ? liste : liste.slice(0, APERCU_MOIS)
+          // Un echec ne doit jamais se cacher sous « + 21 autres » : il
+          // remonte en tete de la case, le reste garde l ordre des heures.
+          const ordonnee = [...liste].sort(
+            (a, b) => Number(b.status === 'failed') - Number(a.status === 'failed'),
+          )
+          const visibles = deplie ? liste : ordonnee.slice(0, APERCU_MOIS)
           const restants = liste.length - visibles.length
 
           return (
@@ -590,7 +595,9 @@ function Alertes({ posts, compact }: { posts: PostWithAccount[]; compact?: boole
     (p) => p.accounts?.platform === 'youtube' && p.status !== 'cancelled' && p.status !== 'failed',
   ).length
 
-  if (soucis.length === 0 && youtube === 0) return null
+  const echecs = posts.filter((p) => p.status === 'failed').length
+
+  if (soucis.length === 0 && youtube === 0 && echecs === 0) return null
 
   const trop = soucis.length > 0
   const detail = soucis
@@ -599,6 +606,14 @@ function Alertes({ posts, compact }: { posts: PostWithAccount[]; compact?: boole
 
   return (
     <span className="flex items-center gap-1">
+      {echecs > 0 && (
+        <span
+          title={`${echecs} publication(s) en echec ce jour. Glisse-la vers un autre creneau pour la relancer, ou ouvre-la.`}
+          className="inline-flex items-center gap-0.5 rounded bg-bad-400/15 px-1 py-px text-[10px] font-semibold tabular-nums text-bad-400"
+        >
+          ✕ {echecs}
+        </span>
+      )}
       {youtube > 0 && (
         <span
           title={`${youtube} envoi(s) YouTube ce jour, sur 6 possibles. Le quota est partage par toutes tes chaines.`}
@@ -629,9 +644,10 @@ function Legende() {
   return (
     <p className="mt-3 text-xs text-mist-600">
       Clique un jour ou un creneau pour programmer, une publication pour l ouvrir. Glisse une
-      publication en attente vers un autre creneau pour la reprogrammer. Le losange ◆ colore signale
-      les publications d une meme campagne, et les deux lettres colorees donnent la langue du
-      texte.
+      publication en attente vers un autre creneau pour la reprogrammer. Une publication en echec
+      (point rouge, badge ✕ sur le jour) se relance de la meme facon : glisse-la vers le creneau
+      voulu, elle repart. Le losange ◆ colore signale les publications d une meme campagne, et
+      les deux lettres colorees donnent la langue du texte.
     </p>
   )
 }

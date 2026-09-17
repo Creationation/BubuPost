@@ -125,6 +125,11 @@ export default function Bibliotheque() {
     () =>
       videos
         .filter((v) => v.statut === 'programmee' && (!filtreMarque || v.marque === filtreMarque))
+        // Ce qui est parti n a plus rien a faire ici : la page dit ce qui
+        // VA se passer. Le passe se lit dans « Ou j en suis » et dans
+        // Publications. Une heure de marge : une campagne a 9h etale ses
+        // comptes jusqu a 9h30, elle est encore en cours.
+        .filter((v) => !v.programmee_pour || new Date(v.programmee_pour).getTime() > Date.now() - 3600_000)
         // Dans l ordre ou elles partiront : le jour, l heure, puis la marque.
         .sort(
           (a, b) =>
@@ -292,7 +297,7 @@ export default function Bibliotheque() {
         </select>
 
         <span className="text-sm text-mist-500">
-          {enFile.length} en file, {programmees.length} deja programmee
+          {enFile.length} en file, {programmees.length} a venir, deja programmee
           {programmees.length > 1 ? 's' : ''}
         </span>
       </div>

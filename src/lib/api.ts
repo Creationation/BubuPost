@@ -176,6 +176,16 @@ export async function deplacerPosts(
         .eq('id', id)
         .select('id'),
     )
+    // Deplacer un echec ou une annulee, c est la relancer : sinon elle garde
+    // son statut, le scheduler l ignore, et la nouvelle date ne sert a rien.
+    unwrap(
+      await supabase
+        .from('posts')
+        .update({ status: 'pending', attempts: 0, error_message: null, container_id: null })
+        .eq('id', id)
+        .in('status', ['failed', 'cancelled'])
+        .select('id'),
+    )
     faits++
   }
   return faits

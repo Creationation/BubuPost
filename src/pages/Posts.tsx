@@ -584,6 +584,13 @@ function ConfirmDeplacement({
         {decrireEcart(delta)}.
       </p>
 
+      {post.status === 'failed' && (
+        <p className="mt-2 text-sm text-ok-400">
+          Elle etait en echec : la deplacer la relance. Son erreur est effacee et elle repart a
+          cette date.
+        </p>
+      )}
+
       {passe && (
         <div className="mt-3">
           <Alert kind="error">
