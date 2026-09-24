@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useState } from 'react'
 import {
+  MODELES_TEXTE,
   listAccounts,
   listPosts,
   listProfiles,
@@ -52,6 +53,7 @@ export default function Admin() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [posts, setPosts] = useState<PostWithAccount[]>([])
   const [limits, setLimits] = useState<Limits>({})
+  const [modele, setModele] = useState<string>('claude-sonnet-5')
   const [notify, setNotify] = useState<Notify>({
     telegram_enabled: true,
     notify_on_success: false,
@@ -77,6 +79,8 @@ export default function Admin() {
       setAccounts(a)
       setPosts(po)
       if (settings.limits) setLimits(settings.limits as Limits)
+      const m = (settings.modele_textes as { id?: string } | undefined)?.id
+      if (m) setModele(m)
       if (settings.notify) setNotify(settings.notify as Notify)
       if (settings.retry) setRetry(settings.retry as Retry)
       setError(null)
@@ -195,6 +199,59 @@ export default function Admin() {
             Il etait aussi ici, sans aucun effet sur la publication. Deux endroits pour un meme
             reglage, dont un seul compte, est une facon sure de se tromper.
           </p>
+        </Card>
+
+        <Card
+          title="Modele d ecriture des textes"
+          hint="Ce qui ecrit les legendes. Le prix est celui d une campagne complete : une video, huit comptes."
+        >
+          <div className="space-y-2">
+            {MODELES_TEXTE.map((m) => (
+              <label
+                key={m.id}
+                className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+                  modele === m.id
+                    ? 'border-brand-500/60 bg-brand-500/10'
+                    : 'border-ink-700 hover:bg-ink-800/40'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="modele-textes"
+                  className="mt-1"
+                  checked={modele === m.id}
+                  onChange={() => setModele(m.id)}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="text-sm font-semibold">{m.nom}</span>
+                    <span className="text-xs tabular-nums text-mist-400">
+                      {m.cout.toFixed(1)} centimes par campagne
+                    </span>
+                    <span className="text-xs text-mist-600">
+                      soit {(m.cout * 0.09 * 30).toFixed(0)} $ par mois a neuf campagnes par jour
+                    </span>
+                  </span>
+                  <span className="mt-0.5 block text-xs text-mist-500">{m.pour}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-mist-600">
+            Les controles ne changent pas : longueur, mots interdits, ressemblance entre les huit
+            textes. Un texte recale est reecrit une fois, puis signale. Si tu descends de modele et
+            que les textes se ressemblent, ca se verra la.
+          </p>
+          <p className="mt-1 text-xs text-mist-600">
+            La lecture du tableau de bord en fin de video se fait toujours sur le plus petit modele :
+            relever des chiffres affiches ne demande pas de reflexion.
+          </p>
+          <button
+            className="btn btn-ghost mt-4"
+            onClick={() => void save('modele_textes', { id: modele })}
+          >
+            Enregistrer le modele
+          </button>
         </Card>
 
         <Card

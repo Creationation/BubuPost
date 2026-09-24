@@ -570,6 +570,28 @@ export async function setProfileRole(id: string, role: string): Promise<void> {
   unwrap(await supabase.from('profiles').update({ role }).eq('id', id).select('id'))
 }
 
+/** Les modeles proposes pour l'ecriture des textes, du plus cher au moins cher. */
+export const MODELES_TEXTE = [
+  {
+    id: 'claude-opus-5',
+    nom: 'Opus 5',
+    cout: 5.1,
+    pour: 'Le plus soigne. A garder si les textes doivent etre irreprochables.',
+  },
+  {
+    id: 'claude-sonnet-5',
+    nom: 'Sonnet 5',
+    cout: 2.1,
+    pour: 'Le bon compromis. Ecrit aussi bien dans presque tous les cas.',
+  },
+  {
+    id: 'claude-haiku-4-5',
+    nom: 'Haiku 4.5',
+    cout: 1.0,
+    pour: 'Le moins cher. A surveiller : huit textes vraiment differents lui demandent plus d effort.',
+  },
+] as const
+
 export async function listSettings(): Promise<Record<string, unknown>> {
   const rows = unwrap(await supabase.from('app_settings').select('key, value'))
   return Object.fromEntries(rows.map((r) => [r.key, r.value]))

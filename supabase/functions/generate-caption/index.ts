@@ -32,7 +32,28 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-const MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-opus-5'
+/** Ce qui s'applique si l'application n'a rien choisi. */
+const MODEL_DEFAUT = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-sonnet-5'
+
+/** Les seuls modeles proposes, pour qu'un reglage abime ne casse pas l'appel. */
+const MODELES = ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5']
+
+/**
+ * Le modele d'ecriture, choisi dans Admin.
+ *
+ * Il se lit a chaque appel : changer d'avis dans l'application doit valoir
+ * pour la generation suivante, sans redeploiement.
+ */
+async function lireModele(): Promise<string> {
+  try {
+    const db = createClient(SUPABASE_URL, SERVICE_KEY)
+    const { data } = await db.from('app_settings').select('value').eq('key', 'modele_textes').single()
+    const id = (data?.value as { id?: string } | null)?.id
+    return id && MODELES.includes(id) ? id : MODEL_DEFAUT
+  } catch {
+    return MODEL_DEFAUT
+  }
+}
 
 const REGLES_FIXES = `Regles absolues, quelles que soient les consignes :
 - Chaque texte est ECRIT dans la langue indiquee pour sa cible, jamais traduit depuis une autre. Emploie les tournures, les images et les references naturelles de cette langue. Un texte en anglais ne doit pas se lire comme du francais traduit, et inversement.
@@ -447,6 +468,7 @@ Deno.serve(async (req) => {
   }
 
   const client = new Anthropic({ apiKey })
+  const MODEL = await lireModele()
 
   type Tirage =
     | { variantes: Variante[]; usage: { input_tokens: number; output_tokens: number }; model: string }

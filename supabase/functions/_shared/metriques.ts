@@ -7,7 +7,12 @@
 // sert.
 import Anthropic from 'npm:@anthropic-ai/sdk@0.122.0'
 
-const MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-opus-5'
+/**
+ * Relever des nombres affiches dans un panneau ne demande aucun raisonnement,
+ * seulement de la lecture : le plus petit modele fait ce travail aussi bien,
+ * pour cinq fois moins cher. Il n'est donc pas reglable.
+ */
+const MODEL = 'claude-haiku-4-5'
 
 export type Metriques = {
   instrument: string | null
