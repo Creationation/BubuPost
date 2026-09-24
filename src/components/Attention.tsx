@@ -3,7 +3,8 @@ import type { ConfigAuto } from '../lib/automatisation'
 import { silenceDepuis } from '../lib/automatisation'
 import type { Account, PostWithAccount } from '../lib/types'
 import { decrireToken } from '../lib/types'
-import type { EtatReserve, SignesDeVie } from '../lib/api'
+import type { EtatReserve, Panne, SignesDeVie } from '../lib/api'
+import { formatDateTime } from '../lib/format'
 
 /**
  * Une chose a faire, ou un etat a connaitre.
@@ -27,6 +28,16 @@ export type Point = {
  * ou que la chaine est arretee depuis trois jours. On liste donc ce qui bloque
  * la chaine, dans l'ordre ou ca la bloque.
  */
+/**
+ * Le message d une panne vient d une API : il peut faire dix lignes de JSON.
+ * On garde la premiere phrase utile, lisible dans une ligne d alerte.
+ */
+function raccourcir(message: string): string {
+  const json = message.match(/"message"\s*:\s*"([^"]+)"/)
+  const texte = (json ? json[1] : message).trim()
+  return texte.length > 160 ? texte.slice(0, 157) + '...' : texte
+}
+
 export function pointsDAttention({
   comptes,
   posts,
@@ -34,6 +45,7 @@ export function pointsDAttention({
   reserve,
   ping,
   dossiers,
+  panne,
 }: {
   comptes: Account[]
   posts: PostWithAccount[]
@@ -41,8 +53,21 @@ export function pointsDAttention({
   reserve: EtatReserve[]
   ping: SignesDeVie | null
   dossiers: number
+  panne?: Panne | null
 }): Point[] {
   const points: Point[] = []
+
+  // 0. La chaine est a l'arret. Rien d'autre ne sert tant que ce point tient :
+  //    aucune campagne n'est creee, donc plus rien ne partira une fois les
+  //    dernieres publiees. C'est reste invisible quatre jours en septembre.
+  if (panne?.message) {
+    points.push({
+      cle: 'panne-moteur',
+      gravite: 'bloquant',
+      texte: `Plus aucune campagne n est creee depuis le ${formatDateTime(panne.depuis)} : ${raccourcir(panne.message)}`,
+      action: { label: 'Voir la reserve', vers: '/bibliotheque' },
+    })
+  }
 
   // 1. Ce qui empeche toute publication. Rien d'autre ne compte tant que
   //    l'un de ces points tient.

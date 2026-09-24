@@ -949,20 +949,25 @@ export type EtatReserve = {
   creneauSaute: string | null
 }
 
+/** Ce qui empeche le moteur de creer des campagnes, s il y a quelque chose. */
+export type Panne = { message: string; depuis: string }
+
 /** Ce que le moteur ferait, calcule par le moteur lui-meme. */
 export async function apercuCadence(): Promise<{
   previsions: Prevision[]
   reserve: EtatReserve[]
+  panne: Panne | null
 }> {
   const { data, error } = await supabase.functions.invoke<{
     previsions?: Prevision[]
     reserve?: EtatReserve[]
+    panne?: Panne | null
     error?: string
   }>('cadence', { body: { action: 'apercu' } })
 
   if (error) throw new Error(errorMessage(error))
   if (!data || data.error) throw new Error(data?.error ?? 'Reponse vide')
-  return { previsions: data.previsions ?? [], reserve: data.reserve ?? [] }
+  return { previsions: data.previsions ?? [], reserve: data.reserve ?? [], panne: data.panne ?? null }
 }
 
 /** Programme une video a une date choisie, hors cadence. */

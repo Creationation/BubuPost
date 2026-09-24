@@ -8,6 +8,7 @@ import {
   listPosts,
   lireConfigAuto,
   type EtatReserve,
+  type Panne,
   type SignesDeVie,
 } from '../lib/api'
 import { friendlyError } from '../lib/errors'
@@ -43,6 +44,7 @@ export default function Dashboard() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [config, setConfig] = useState<ConfigAuto | null>(null)
   const [reserve, setReserve] = useState<EtatReserve[]>([])
+  const [panne, setPanne] = useState<Panne | null>(null)
   const [reserveConnue, setReserveConnue] = useState(false)
   const [ping, setPing] = useState<SignesDeVie | null>(null)
   const [dossiers, setDossiers] = useState(0)
@@ -76,7 +78,9 @@ export default function Dashboard() {
         // L'automatisation n'est peut-etre pas encore en place.
       }
       try {
-        setReserve((await apercuCadence()).reserve)
+        const a = await apercuCadence()
+        setReserve(a.reserve)
+        setPanne(a.panne)
       } catch {
         // L'apercu appelle une fonction : son echec ne doit rien casser ici.
       } finally {
@@ -118,8 +122,8 @@ export default function Dashboard() {
    * point.
    */
   const attention = useMemo(
-    () => pointsDAttention({ comptes: accounts, posts, config, reserve, ping, dossiers }),
-    [accounts, posts, config, reserve, ping, dossiers],
+    () => pointsDAttention({ comptes: accounts, posts, config, reserve, ping, dossiers, panne }),
+    [accounts, posts, config, reserve, ping, dossiers, panne],
   )
 
   const failed = useMemo(

@@ -227,6 +227,70 @@ async function alerterReserve(db: SupabaseClient, etats: EtatReserve[]) {
   })
 }
 
+/**
+ * Ce qui empeche le moteur de travailler, retenu d un passage a l autre.
+ *
+ * Un passage qui echoue remet la video en file et repart : sans trace, la
+ * chaine peut s arreter des jours sans que rien ne le dise. C est arrive du
+ * 20 au 24 septembre 2026, credit Anthropic epuise.
+ */
+export type Panne = { message: string; depuis: string; a: string }
+
+async function lirePanne(db: SupabaseClient): Promise<Panne | null> {
+  const { data } = await db.from('app_settings').select('value').eq('key', 'panne_moteur').single()
+  const v = data?.value as Panne | null
+  return v && v.message ? v : null
+}
+
+/** Une panne commence, ou se poursuit. Telegram au debut, puis toutes les 6 h. */
+async function signalerPanne(db: SupabaseClient, message: string) {
+  const vue = await lirePanne(db)
+  const maintenant = new Date()
+  const nouvelle = !vue || vue.message !== message
+  const vieille = vue && maintenant.getTime() - new Date(vue.a).getTime() > 6 * 3_600_000
+
+  if (nouvelle || vieille) {
+    await notifyTelegram(
+      [
+        '🛑 La creation de campagnes est bloquee',
+        '',
+        message,
+        '',
+        vue && !nouvelle ? `Depuis le ${new Date(vue.depuis).toLocaleString('fr-FR')}.` : '',
+        'Rien ne part tant que ce point n est pas regle. Les videos restent en reserve.',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      db,
+    )
+  }
+
+  await db.from('app_settings').upsert({
+    key: 'panne_moteur',
+    value: {
+      message,
+      depuis: nouvelle ? maintenant.toISOString() : (vue?.depuis ?? maintenant.toISOString()),
+      a: nouvelle || vieille ? maintenant.toISOString() : (vue?.a ?? maintenant.toISOString()),
+    },
+    updated_at: maintenant.toISOString(),
+  })
+}
+
+/** La panne est finie : une campagne vient d etre creee. */
+async function oublierPanne(db: SupabaseClient) {
+  const vue = await lirePanne(db)
+  if (!vue) return
+  await db.from('app_settings').upsert({
+    key: 'panne_moteur',
+    value: {},
+    updated_at: new Date().toISOString(),
+  })
+  await notifyTelegram(
+    ['✅ La creation de campagnes est repartie', '', `Elle etait bloquee depuis le ${new Date(vue.depuis).toLocaleString('fr-FR')}.`].join('\n'),
+    db,
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Le passage du moteur
 // ---------------------------------------------------------------------------
@@ -338,6 +402,15 @@ async function passage(db: SupabaseClient, config: Config, forcer: boolean) {
 
   await alerterReserve(db, await etatReserve(db, config))
 
+  // Rien cree alors qu il y avait du travail : on le dit, une fois, au lieu
+  // de rejouer le meme echec toutes les quinze minutes en silence.
+  const echecs = resultats.filter((r) => typeof r.echec === 'string')
+  if (creees > 0) {
+    await oublierPanne(db)
+  } else if (echecs.length > 0) {
+    await signalerPanne(db, String(echecs[0].echec))
+  }
+
   return { ok: true, creees, resultats }
 }
 
@@ -372,7 +445,12 @@ Deno.serve(async (req) => {
   try {
     switch (action) {
       case 'apercu':
-        return json({ ok: true, previsions: await apercu(db, config), reserve: await etatReserve(db, config) })
+        return json({
+          ok: true,
+          previsions: await apercu(db, config),
+          reserve: await etatReserve(db, config),
+          panne: await lirePanne(db),
+        })
 
       case 'retexter': {
         // Reecrire les textes d une campagne pas encore partie, sans toucher
