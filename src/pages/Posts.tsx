@@ -6,7 +6,6 @@ import {
   listAccounts,
   listPosts,
   listerBibliotheque,
-  retryPost,
   validerPost,
 } from '../lib/api'
 import { friendlyError } from '../lib/errors'
@@ -18,6 +17,7 @@ import { Alert, ConfirmModal, EmptyState, Loading, Modal, PageHeader } from '../
 import PostComposer from '../components/PostComposer'
 import { PostEditor, PostLogs, PostRow } from '../components/PostRow'
 import { LigneCampagne, useCampagnesOuvertes } from '../components/Campagne'
+import Reprogrammer from '../components/Reprogrammer'
 import Calendrier, { type DemandeDeplacement } from '../components/Calendrier'
 
 const STATUS_FILTERS = [
@@ -93,6 +93,8 @@ export default function Posts() {
   const [showingLogs, setShowingLogs] = useState<PostWithAccount | null>(null)
   const [toDelete, setToDelete] = useState<PostWithAccount | null>(null)
   const [deplacement, setDeplacement] = useState<DemandeDeplacement | null>(null)
+  /** Les publications dont on choisit la nouvelle heure. */
+  const [aReprogrammer, setAReprogrammer] = useState<PostWithAccount[] | null>(null)
 
   const { ouvertes, basculer } = useCampagnesOuvertes()
 
@@ -212,7 +214,7 @@ export default function Posts() {
       onLogs: () => setShowingLogs(post),
       onCancel: () => void act(() => cancelPost(post.id), 'Publication annulee'),
       onValider: () => void act(() => validerPost(post.id), 'Publication validee, elle partira a son heure'),
-      onRetry: () => void act(() => retryPost(post.id), 'Publication reprogrammee'),
+      onRetry: () => setAReprogrammer([post]),
       onDelete: () => setToDelete(post),
     }
   }
@@ -277,6 +279,9 @@ export default function Posts() {
     setDepart(quand ? toLocalInput(quand.toISOString()) : null)
     setComposing(true)
   }
+
+  /** Tout ce qui a echoue, filtres compris : c'est ce qu'on propose de relancer. */
+  const enEchec = useMemo(() => filtered.filter((p) => p.status === 'failed'), [filtered])
 
   const hasFilter = brand || platform || accountId || status
 
@@ -372,6 +377,24 @@ export default function Posts() {
           )}
         </div>
       </div>
+
+      {enEchec.length > 0 && (
+        <div className="panel mb-4 flex flex-wrap items-center justify-between gap-3 border-bad-600/40 p-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-bad-400">
+              {enEchec.length} publication{enEchec.length > 1 ? 's' : ''} n{' '}
+              {enEchec.length > 1 ? 'ont' : 'a'} pas pu partir
+            </p>
+            <p className="mt-0.5 text-xs text-mist-500">
+              Choisis quand elles repartent : tout de suite, plus tard, ou etalees au hasard pour
+              qu elles ne tombent pas toutes a la meme minute.
+            </p>
+          </div>
+          <button className="btn btn-primary shrink-0" onClick={() => setAReprogrammer(enEchec)}>
+            Reprogrammer {enEchec.length > 1 ? 'tout' : ''}
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4">
@@ -517,6 +540,25 @@ export default function Posts() {
       />
 
       <PostLogs post={showingLogs} onClose={() => setShowingLogs(null)} />
+
+      {aReprogrammer && (
+        <Reprogrammer
+          posts={aReprogrammer}
+          onClose={() => setAReprogrammer(null)}
+          onConfirm={(reprises) => {
+            setAReprogrammer(null)
+            void act(
+              () =>
+                deplacerPosts(
+                  reprises.map((r) => ({ id: r.id, scheduled_at: r.quand.toISOString() })),
+                ).then(() => undefined),
+              reprises.length > 1
+                ? `${reprises.length} publications reprogrammees`
+                : 'Publication reprogrammee',
+            )
+          }}
+        />
+      )}
 
       <ConfirmDeplacement
         demande={deplacement}
