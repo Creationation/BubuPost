@@ -282,22 +282,66 @@ function ranger(racine, relatif, sousDossier) {
  * Le creneau d'envoi est signe par l'application et ne vaut que pour ce
  * chemin, quelques minutes. Le watcher n'a donc jamais de cle de stockage.
  */
+/** Combien d'octets le stockage a vraiment recus, ou null s'il ne repond pas. */
+async function poidsStocke(url) {
+  try {
+    const r = await fetch(url, { method: 'HEAD' })
+    if (!r.ok) return null
+    const n = Number(r.headers.get('content-length'))
+    return Number.isFinite(n) ? n : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Envoie un fichier, et VERIFIE qu'il est arrive entier.
+ *
+ * Un envoi coupe en route repondait OK : le stockage gardait ce qu'il avait
+ * recu, parfois quarante-huit octets. La video entrait en reserve, partait en
+ * campagne, et Instagram la refusait des semaines plus tard avec un code qui
+ * ne dit rien du probleme. Treize videos etaient dans cet etat le 3 octobre
+ * 2026. Comparer le poids coute une requete HEAD ; ne pas le faire coute une
+ * enquete.
+ *
+ * Trois essais, puis on laisse l'erreur remonter : le fichier reste en place
+ * et le passage suivant reprendra.
+ */
 async function deposer(local, cheminFichier, nomFichier) {
-  const creneau = await appeler(local, { action: 'upload-url', fichier: nomFichier })
-
   const octets = fs.readFileSync(cheminFichier)
-  const res = await fetch(creneau.signedUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': typeVideo(nomFichier) },
-    body: octets,
-  })
+  let dernierSouci = ''
 
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '')
-    throw new Error(`envoi refuse (HTTP ${res.status}) ${detail.slice(0, 160)}`)
+  for (let essai = 1; essai <= 3; essai++) {
+    const creneau = await appeler(local, { action: 'upload-url', fichier: nomFichier })
+
+    const res = await fetch(creneau.signedUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': typeVideo(nomFichier),
+        'Content-Length': String(octets.length),
+      },
+      body: octets,
+    })
+
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      dernierSouci = `HTTP ${res.status} ${detail.slice(0, 120)}`
+    } else {
+      const recu = await poidsStocke(creneau.video_url)
+      if (recu === octets.length) return creneau.video_url
+      dernierSouci =
+        recu === null
+          ? 'le stockage ne repond pas, impossible de verifier'
+          : `${recu} octets arrives sur ${octets.length}`
+    }
+
+    if (essai < 3) {
+      souci(`${nomFichier} : envoi incomplet (${dernierSouci}), essai ${essai + 1} sur 3...`)
+      await pause(3000 * essai)
+    }
   }
 
-  return creneau.video_url
+  throw new Error(`envoi incomplet apres trois essais : ${dernierSouci}`)
 }
 
 function typeVideo(nom) {
