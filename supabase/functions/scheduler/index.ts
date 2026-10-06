@@ -12,6 +12,7 @@ import {
   type EchecPublication,
 } from '../_shared/notify.ts'
 import { corsHeaders, json } from '../_shared/cors.ts'
+import { effacerSiFini } from '../_shared/stockage.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -499,6 +500,13 @@ async function processPost(
       })
       .eq('id', post.id)
     await log(db, post.id, 'published', { platform_post_id: platformPostId })
+
+    // La plateforme a fait sa copie : le fichier ne sert plus a personne des
+    // que les autres comptes de la campagne sont passes. Le garder a rempli
+    // le quota et coupe le service pendant quatorze heures le 6 octobre 2026.
+    if (await effacerSiFini(db, post.video_url)) {
+      await log(db, post.id, 'fichier_efface', { video_url: post.video_url })
+    }
 
     if (settings.notify.notify_on_success) {
       await notifyTelegram(

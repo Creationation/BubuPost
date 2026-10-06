@@ -13,6 +13,7 @@ import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders, json } from '../_shared/cors.ts'
 import { jwtRole } from '../_shared/auth.ts'
 import { notifyTelegram } from '../_shared/notify.ts'
+import { menagerStockage } from '../_shared/stockage.ts'
 import {
   assembler,
   choisirCta,
@@ -401,6 +402,15 @@ async function passage(db: SupabaseClient, config: Config, forcer: boolean) {
   }
 
   await alerterReserve(db, await etatReserve(db, config))
+
+  // Le menage du stockage, un peu a chaque passage. Supprimer apres chaque
+  // publication ne suffit pas : restent les campagnes annulees, les echecs
+  // definitifs et les fichiers remplaces. Deux cents par passage, toutes les
+  // quinze minutes, suffisent largement a ne jamais reprendre de retard.
+  const menage = await menagerStockage(db, 200)
+  if (menage.effaces > 0) {
+    console.log(`stockage : ${menage.effaces} fichier(s) effaces, ${Math.round(menage.octets / 1048576)} Mo`)
+  }
 
   // Rien cree alors qu il y avait du travail : on le dit, une fois, au lieu
   // de rejouer le meme echec toutes les quinze minutes en silence.
