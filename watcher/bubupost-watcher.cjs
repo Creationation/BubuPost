@@ -26,7 +26,14 @@ const os = require('os')
 const path = require('path')
 const { execFileSync } = require('child_process')
 
-const VERSION = '1.0.0'
+const VERSION = '1.1.0'
+
+/**
+ * Fichiers de travail d'un autre programme, jamais des videos finies.
+ * Le 25 septembre 2026, « 25092026_1_matin.mp4.music.tmp.mp4 » (TradeReels qui
+ * posait la musique) est entre en reserve : son nom finit bien par .mp4.
+ */
+const TEMPORAIRE = /\.(tmp|part|crdownload)(\.|$)/i
 const CONFIG = path.join(__dirname, 'config.json')
 
 // ---------------------------------------------------------------------------
@@ -241,7 +248,7 @@ function videosDe(racine, extensions, recursif, sousDossierTraite) {
         continue
       }
 
-      if (e.isFile() && extensions.some((ext) => e.name.toLowerCase().endsWith(ext))) {
+      if (e.isFile() && !TEMPORAIRE.test(e.name) && extensions.some((ext) => e.name.toLowerCase().endsWith(ext))) {
         trouvees.push(relatif)
       }
     }
@@ -307,12 +314,12 @@ async function poidsStocke(url) {
  * Trois essais, puis on laisse l'erreur remonter : le fichier reste en place
  * et le passage suivant reprendra.
  */
-async function deposer(local, cheminFichier, nomFichier) {
+async function deposer(local, cheminFichier, nomFichier, demande = { action: 'upload-url', fichier: nomFichier }) {
   const octets = fs.readFileSync(cheminFichier)
   let dernierSouci = ''
 
   for (let essai = 1; essai <= 3; essai++) {
-    const creneau = await appeler(local, { action: 'upload-url', fichier: nomFichier })
+    const creneau = await appeler(local, demande)
 
     const res = await fetch(creneau.signedUrl, {
       method: 'PUT',
@@ -441,6 +448,71 @@ async function dejaTraites(local, cles) {
   return traites
 }
 
+/** Chemins deja signales introuvables, pour ne pas le repeter chaque minute. */
+const sansSource = new Set()
+
+/**
+ * Envoi a la demande (8 octobre 2026).
+ *
+ * L'application donne la liste des videos dont une publication tombe dans
+ * les 24 h et qui ne sont pas dans le stockage. On les envoie depuis le
+ * disque, a l'adresse reservee lors de l'ingestion : les publications pointent
+ * deja dessus. Elles sont effacees apres le dernier compte, cote serveur.
+ */
+async function envoyerAVenir(local, dossiers) {
+  let reponse
+  try {
+    reponse = await appeler(local, { action: 'a-envoyer' })
+  } catch (e) {
+    souci(`Liste des videos a envoyer indisponible : ${e.message}`)
+    return
+  }
+
+  for (const v of reponse.videos ?? []) {
+    const quand = new Date(v.quand).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
+
+    let complet = null
+    if (v.source_cle) {
+      for (const d of dossiers) {
+        const candidat = path.join(d.chemin, v.source_cle)
+        if (fs.existsSync(candidat)) {
+          complet = candidat
+          break
+        }
+      }
+    }
+
+    if (!complet) {
+      if (!sansSource.has(v.chemin)) {
+        sansSource.add(v.chemin)
+        souci(`Video introuvable sur ce PC pour la publication du ${quand} : ${v.source_cle ?? v.chemin}`)
+        try {
+          await appeler(local, {
+            action: 'ping',
+            version: VERSION,
+            detail: { alerte: `video introuvable sur le PC : ${v.source_cle ?? v.chemin}` },
+          })
+        } catch {
+          // Le journal local garde l'information.
+        }
+      }
+      continue
+    }
+
+    if (!(await estStable(complet))) continue
+
+    try {
+      const taille = fs.statSync(complet).size
+      info(`${v.source_cle} : envoi pour la publication du ${quand} (${(taille / 1048576).toFixed(1)} Mo)...`)
+      await deposer(local, complet, path.basename(complet), { action: 'envoi-url', chemin: v.chemin })
+      bien(`${v.source_cle} : en ligne, effacee apres son dernier compte.`)
+      sansSource.delete(v.chemin)
+    } catch (e) {
+      souci(`${v.source_cle} : envoi impossible (${e.message}), nouvel essai au passage suivant.`)
+    }
+  }
+}
+
 async function passage(local) {
   // Premier appel : on demande la configuration sans inventaire, puisqu'on ne
   // sait pas encore quels dossiers surveiller.
@@ -451,6 +523,11 @@ async function passage(local) {
     souci(`L'application ne repond pas : ${e.message}`)
     return
   }
+
+  // D'abord ce qui est urgent : les videos qui publient dans les 24 h et ne
+  // sont pas encore en ligne. Meme automatisation suspendue : une publication
+  // deja programmee doit pouvoir partir.
+  await envoyerAVenir(local, reglages.dossiers ?? [])
 
   if (!reglages.actif) {
     info('Automatisation suspendue dans l application, rien n est traite.')
@@ -565,8 +642,11 @@ async function passage(local) {
       }
 
       try {
-        info(`${fichier} : envoi de ${(taille / 1048576).toFixed(1)} Mo...`)
-        const videoUrl = await deposer(local, complet, fichier)
+        // La video ne part PAS maintenant : on reserve seulement son adresse.
+        // Elle sera envoyee dans les 24 h qui precedent sa publication (voir
+        // envoyerAVenir), puis effacee apres le dernier compte.
+        const { video_url: videoUrl } = await appeler(local, { action: 'upload-url', fichier })
+        info(`${fichier} : entree en reserve (${(taille / 1048576).toFixed(1)} Mo, envoyee la veille de sa publication)`)
 
         // La derniere image part a cote. Si elle manque, la video entre
         // quand meme : un texte sans chiffres vaut mieux qu'une video bloquee.

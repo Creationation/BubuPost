@@ -12,12 +12,22 @@
 // YouTube. Un compte dedie au watcher les lui donnerait.
 //
 // A la place il porte un seul secret partage, WATCHER_TOKEN, qui n'ouvre que
-// cette fonction. Ce qu'il peut faire tient en quatre verbes :
+// cette fonction. Ce qu'il peut faire tient en quelques verbes :
 //   config      lire les regles, et signaler qu'il est vivant
 //   upload-url  demander un creneau d'envoi signe, valable quelques minutes,
-//               pour UN chemin precis
+//               pour UN chemin precis (sert aussi a reserver l'adresse d'une
+//               video sans l'envoyer)
 //   ingest      deposer une video dans la bibliotheque
+//   a-envoyer   les videos publiees dans les 24 h qui ne sont pas en ligne
+//   envoi-url   un creneau d'envoi pour l'une d'elles, et seulement elles
 //   ping        signaler qu'il est vivant, sans rien demander
+//
+// ENVOI A LA DEMANDE (8 octobre 2026). La video ne monte plus en ligne quand
+// le watcher la decouvre : seule sa derniere image part (les chiffres de la
+// seance). La video elle-meme est envoyee depuis le PC dans les 24 h qui
+// precedent sa premiere publication, a l'adresse reservee a l'ingestion, puis
+// effacee apres le dernier compte (effacerSiFini). Le stockage ne contient
+// donc que ce qui part dans la journee.
 // Il ne peut ni lire un compte, ni lire une publication, ni supprimer quoi que
 // ce soit. La cle service_role reste ici, cote serveur.
 //
@@ -36,6 +46,7 @@ import {
   type Config,
 } from '../_shared/automatisation.ts'
 import { lireMetriques, type Metriques } from '../_shared/metriques.ts'
+import { A_VENIR, cheminDe, dansLeStockage, HORIZON_ENVOI_H } from '../_shared/stockage.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -436,6 +447,66 @@ Deno.serve(async (req) => {
           token: data.token,
           video_url: db.storage.from('videos').getPublicUrl(chemin).data.publicUrl,
         })
+      }
+
+      case 'a-envoyer': {
+        // Les videos dont une publication tombe dans les HORIZON_ENVOI_H heures
+        // et qui ne sont pas encore dans le stockage. Le watcher les envoie
+        // depuis le disque. Une publication en echec relancee depuis l'app
+        // repasse en pending : sa video revient ici toute seule.
+        const limite = new Date(Date.now() + HORIZON_ENVOI_H * 3_600_000).toISOString()
+        const { data: posts, error } = await db
+          .from('posts')
+          .select('video_url, scheduled_at')
+          .in('status', A_VENIR)
+          .lte('scheduled_at', limite)
+          .order('scheduled_at')
+        if (error) return json({ error: error.message }, 500)
+
+        const premiere = new Map<string, string>()
+        for (const p of posts ?? []) {
+          if (p.video_url && !premiere.has(p.video_url)) premiere.set(p.video_url, p.scheduled_at)
+        }
+
+        const videos = []
+        for (const [videoUrl, quand] of premiere) {
+          const chemin = cheminDe(videoUrl)
+          if (!chemin) continue
+          if (await dansLeStockage(db, chemin)) continue
+          const { data: source } = await db
+            .from('bibliotheque')
+            .select('source_cle, taille')
+            .eq('video_url', videoUrl)
+            .not('source_cle', 'is', null)
+            .limit(1)
+            .maybeSingle()
+          videos.push({
+            video_url: videoUrl,
+            chemin,
+            quand,
+            source_cle: source?.source_cle ?? null,
+            taille: source?.taille ?? null,
+          })
+        }
+        return json({ ok: true, heures: HORIZON_ENVOI_H, videos })
+      }
+
+      case 'envoi-url': {
+        // N'ouvre un creneau que pour un chemin qu'une publication a venir
+        // reclame : le jeton du watcher ne permet pas d'ecrire n'importe ou.
+        const chemin = String(body.chemin ?? '')
+        if (!chemin || chemin.includes('..')) return json({ error: 'Chemin manquant ou invalide' }, 400)
+        const videoUrl = db.storage.from('videos').getPublicUrl(chemin).data.publicUrl
+        const { count } = await db
+          .from('posts')
+          .select('id', { count: 'exact', head: true })
+          .eq('video_url', videoUrl)
+          .in('status', A_VENIR)
+        if (!count) return json({ error: 'Aucune publication a venir pour ce chemin' }, 403)
+
+        const { data, error } = await db.storage.from('videos').createSignedUploadUrl(chemin, { upsert: true })
+        if (error) return json({ error: error.message }, 500)
+        return json({ ok: true, chemin, signedUrl: data.signedUrl, token: data.token, video_url: videoUrl })
       }
 
       case 'metriques': {

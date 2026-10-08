@@ -12,3 +12,6 @@ supabase/.temp
 
 # L'icone est regeneree par scripts/make-icon.cjs
 desktop/BubuPost.png
+
+.vercel
+.env*

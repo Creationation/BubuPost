@@ -181,8 +181,17 @@ export function LecteurVideo({
           }`}
         >
           {echec ? (
-            <div className="flex aspect-[9/16] items-center justify-center px-3 text-center text-xs text-bad-400">
-              La video ne se charge pas depuis cette adresse.
+            // Depuis le 8 octobre 2026 la video reste sur le PC : le watcher ne
+            // l'envoie que dans les 24 h qui precedent sa publication, et elle
+            // est effacee apres. Ne pas la trouver ici est donc le cas normal.
+            <div className="flex aspect-[9/16] flex-col items-center justify-center gap-2 px-3 text-center text-xs text-mist-400">
+              <span className="text-2xl" aria-hidden>
+                💻
+              </span>
+              <span>Video sur le PC.</span>
+              <span className="text-mist-600">
+                Mise en ligne 24 h avant sa publication, effacee apres.
+              </span>
             </div>
           ) : (
             <video

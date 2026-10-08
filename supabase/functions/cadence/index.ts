@@ -228,6 +228,80 @@ async function alerterReserve(db: SupabaseClient, etats: EtatReserve[]) {
   })
 }
 
+/** Demande de Diego, 8 octobre 2026 : etre prevenu quand il ne reste que 10 videos. */
+const SEUIL_STOCK_DEFAUT = 10
+
+/**
+ * Combien de VIDEOS restent a publier, toutes marques confondues.
+ *
+ * Une video compte une fois, qu'elle soit deja programmee (publications a
+ * venir) ou encore en file dans la reserve, et quel que soit le nombre de
+ * marques ou de comptes qui la publieront. Les videos en pause ne comptent
+ * pas : elles ne partiront pas sans decision.
+ */
+async function videosRestantes(db: SupabaseClient): Promise<number> {
+  const cles = new Set<string>()
+
+  const { data: posts } = await db
+    .from('posts')
+    .select('video_url')
+    .in('status', ['pending', 'a_valider', 'processing'])
+  const urls = [...new Set((posts ?? []).map((p: { video_url: string }) => p.video_url).filter(Boolean))]
+  if (urls.length > 0) {
+    const { data: sources } = await db.from('bibliotheque').select('video_url, source_cle').in('video_url', urls)
+    const parUrl = new Map((sources ?? []).map((s: { video_url: string; source_cle: string | null }) => [s.video_url, s.source_cle]))
+    for (const u of urls) cles.add(parUrl.get(u) || u)
+  }
+
+  const { data: file } = await db.from('bibliotheque').select('source_cle, video_url').eq('statut', 'en_file')
+  for (const b of file ?? []) cles.add((b as { source_cle: string | null }).source_cle || (b as { video_url: string }).video_url)
+
+  return cles.size
+}
+
+/**
+ * L'alerte qu'on ne peut pas rater : plus que N videos a publier.
+ *
+ * Paliers 10, 5, 2, 0 (pour un seuil de 10) : un message a chaque palier
+ * franchi vers le bas, et un rappel par 24 h tant que le stock reste sous le
+ * seuil. Des que le stock remonte au-dessus, la memoire est effacee.
+ */
+async function alerterStock(db: SupabaseClient, seuil: number) {
+  const reste = await videosRestantes(db)
+  const { data } = await db.from('app_settings').select('value').eq('key', 'alerte_stock_videos').maybeSingle()
+  const vu = (data?.value ?? null) as { palier: number; a: string } | null
+
+  if (reste > seuil) {
+    if (vu) await db.from('app_settings').delete().eq('key', 'alerte_stock_videos')
+    return
+  }
+
+  const paliers = [seuil, Math.ceil(seuil / 2), Math.min(2, seuil), 0]
+  const palier = Math.min(...paliers.filter((p) => reste <= p))
+  const empire = !vu || palier < vu.palier
+  const rappel = vu && Date.now() - new Date(vu.a).getTime() > 24 * 3_600_000
+  if (!empire && !rappel) return
+
+  const texte = [
+    reste === 0 ? '🚨 <b>Plus aucune video a publier</b>' : `🚨 <b>Plus que ${reste} video${reste > 1 ? 's' : ''} a publier</b>`,
+    '',
+    reste === 0
+      ? "BubuPost n'a plus rien a publier : les prochains creneaux seront sautes."
+      : `Toutes marques confondues, il reste ${reste} video${reste > 1 ? 's' : ''} (programmees ou en reserve) avant que BubuPost n'ait plus rien a publier.`,
+    '',
+    'Enregistre de nouvelles seances (OBS) : EdgeSyncFX Studio fabriquera les Reels et le watcher les deposera tout seul.',
+    'https://bubu-post.vercel.app/bibliotheque',
+  ].join('\n')
+
+  if (await notifyTelegram(texte, db)) {
+    await db.from('app_settings').upsert({
+      key: 'alerte_stock_videos',
+      value: { palier, reste, a: new Date().toISOString() },
+      updated_at: new Date().toISOString(),
+    })
+  }
+}
+
 /**
  * Ce qui empeche le moteur de travailler, retenu d un passage a l autre.
  *
@@ -402,6 +476,7 @@ async function passage(db: SupabaseClient, config: Config, forcer: boolean) {
   }
 
   await alerterReserve(db, await etatReserve(db, config))
+  await alerterStock(db, config.reserve?.seuilGlobal ?? SEUIL_STOCK_DEFAUT)
 
   // Le menage du stockage, un peu a chaque passage. Supprimer apres chaque
   // publication ne suffit pas : restent les campagnes annulees, les echecs

@@ -16,6 +16,12 @@
 // Le fichier doit donc etre en ligne au moment de la publication. Il ne peut
 // pas rester uniquement sur le PC, qui est souvent eteint. Le mieux possible
 // est donc de l'y mettre le temps qu'il faut, puis de l'enlever.
+//
+// Depuis le 8 octobre 2026 (nouveau projet Supabase), c'est exactement ce qui
+// se passe : le watcher n'envoie la video que dans les HORIZON_ENVOI_H heures
+// qui precedent sa premiere publication (action a-envoyer), a l'adresse
+// reservee lors de l'ingestion. Si elle manque a l'heure dite (PC eteint), le
+// scheduler repousse au lieu d'echouer.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 
 /** Le chemin dans le bucket, depuis une adresse publique complete. */
@@ -29,7 +35,37 @@ export function cheminDe(url: string | null | undefined): string | null {
  * Les statuts d'une publication qui a encore besoin de son fichier.
  * Une publication partie, annulee ou definitivement en echec n'en a plus.
  */
-const A_VENIR = ['pending', 'a_valider', 'processing']
+export const A_VENIR = ['pending', 'a_valider', 'processing']
+
+/** Combien d'heures avant sa premiere publication une video est envoyee. */
+export const HORIZON_ENVOI_H = 24
+
+/** Le fichier est-il deja dans le bucket ? (lecture du catalogue, sans telecharger) */
+export async function dansLeStockage(db: SupabaseClient, chemin: string): Promise<boolean> {
+  const coupe = chemin.lastIndexOf('/')
+  const dossier = coupe > 0 ? chemin.slice(0, coupe) : ''
+  const nom = chemin.slice(coupe + 1)
+  const { data, error } = await db.storage.from('videos').list(dossier, { search: nom, limit: 10 })
+  if (error) return false
+  return (data ?? []).some((o) => o.name === nom)
+}
+
+/**
+ * La video est-elle telechargeable a son adresse publique ?
+ *
+ * Une panne reseau ne doit pas bloquer une publication : dans le doute on
+ * repond oui, et c'est la plateforme qui dira si le fichier manque.
+ */
+export async function videoEnLigne(url: string | null | undefined): Promise<boolean> {
+  if (!url) return false
+  try {
+    const r = await fetch(url, { method: 'HEAD' })
+    if (r.status === 404 || r.status === 400) return false
+    return true
+  } catch {
+    return true
+  }
+}
 
 /**
  * Efface du stockage ce dont plus personne n'a besoin.

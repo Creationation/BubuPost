@@ -6,13 +6,18 @@
 import { createClient, SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 import { adapterFor, Account, PlatformError } from '../_shared/adapters/index.ts'
 import {
+  echapper,
   messageEchecs,
   messageQuota,
+  nomFichier,
   notifyTelegram,
   type EchecPublication,
 } from '../_shared/notify.ts'
 import { corsHeaders, json } from '../_shared/cors.ts'
-import { effacerSiFini } from '../_shared/stockage.ts'
+import { effacerSiFini, videoEnLigne } from '../_shared/stockage.ts'
+
+/** Video pas encore envoyee par le PC : on reessaie dans ce delai. */
+const ATTENTE_VIDEO_MINUTES = 30
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -374,6 +379,39 @@ async function processPost(
       )
     }
     return 'quota atteint'
+  }
+
+  // La video n'est en ligne que dans les 24 h qui precedent sa publication :
+  // c'est le watcher, sur le PC, qui l'envoie. PC eteint ou watcher arrete,
+  // elle peut manquer a l'heure dite. Ce n'est pas un echec de la plateforme :
+  // on repousse sans compter de tentative, et on previent (une fois par heure
+  // et par video, grace a la garde anti-doublon de notifyTelegram). Verifie
+  // AVANT le quota YouTube, pour ne pas en consommer pour rien. Un conteneur
+  // deja cree veut dire que la plateforme a deja recupere la video.
+  if (!post.container_id && !(await videoEnLigne(post.video_url))) {
+    await db
+      .from('posts')
+      .update({
+        status: 'pending',
+        next_attempt_at: new Date(Date.now() + ATTENTE_VIDEO_MINUTES * 60_000).toISOString(),
+      })
+      .eq('id', post.id)
+    await log(db, post.id, 'video_pas_en_ligne', { video_url: post.video_url, attente_minutes: ATTENTE_VIDEO_MINUTES })
+
+    if (settings.notify.telegram_enabled) {
+      await notifyTelegram(
+        [
+          '📴 <b>Video pas encore envoyee par le PC</b>',
+          '',
+          `Video : ${echapper(nomFichier(post.video_url))}`,
+          '',
+          `Les publications de cette video attendent, nouvel essai toutes les ${ATTENTE_VIDEO_MINUTES} min.`,
+          "Allume le PC et verifie que l'icone BubuPost est pres de l'horloge.",
+        ].join('\n'),
+        db,
+      )
+    }
+    return 'video pas encore en ligne'
   }
 
   // Le quota YouTube appartient au projet Google, pas a la chaine : trois

@@ -99,3 +99,20 @@ production avant de conclure a un echec.
 La fiche complete du projet, avec l'historique des incidents et de leurs causes,
 est dans la memoire de Claude Code : `project_bubupost.md`. La lire avant un
 gros chantier.
+
+## Nouveau PC (08/10/2026)
+
+- Le watcher tourne via l'icone pres de l'horloge : `desktop/bubupost_tray.pyw` (Python + pystray),
+  raccourcis Bureau `BubuPost.lnk` et `shell:startup\BubuPost.lnk` (`--tray`). Ne plus utiliser
+  `watcher/installer-demarrage.vbs` (doublon). `--sans-watcher` pour tester l'icone sans rien envoyer.
+- Outils de `3-outils` : chemins via les variables utilisateur `BUBUPOST_CLES` / `BUBUPOST_ACCES`.
+## Nouveau projet Supabase + envoi a la demande (08/10/2026)
+
+- Projet actif : `ozisbzwmjrhmdeojcbkt` (compte du CLI de ce PC, plan Pro temporaire). L'ancien
+  `ztelymzqhojuxaxryuty` est abandonne (quota depasse). Deployer avec `--project-ref ozisbzwmjrhmdeojcbkt`.
+- La video n'est plus envoyee a l'ingestion : le watcher reserve l'adresse (`upload-url` sans PUT), puis
+  `a-envoyer` / `envoi-url` l'envoient dans les 24 h (`HORIZON_ENVOI_H`) avant la 1re publication ;
+  `effacerSiFini` l'efface apres le dernier compte. Video absente a l'heure : le scheduler repousse de
+  30 min sans tentative + Telegram. Alerte Telegram `alerterStock` a 10/5/2/0 videos restantes.
+- `desktop/bubupost_tray.pyw` : fenetre pywebview + icone + watcher. Dans `_sur_fermeture`, ne JAMAIS
+  appeler `window.hide()` directement (deadlock) : le lancer dans un thread.

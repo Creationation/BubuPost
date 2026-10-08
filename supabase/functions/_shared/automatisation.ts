@@ -40,7 +40,12 @@ export type Config = {
     position: 'debut' | 'fin'
   }
   moteur: { actif: boolean; horizonJours: number }
-  reserve: { seuilParDefaut: number; seuilParMarque: Record<string, number> }
+  reserve: {
+    seuilParDefaut: number
+    seuilParMarque: Record<string, number>
+    /** Alerte globale : plus que N videos a publier, toutes marques (defaut 10). */
+    seuilGlobal?: number
+  }
   alerteSilenceHeures: number
 }
 
